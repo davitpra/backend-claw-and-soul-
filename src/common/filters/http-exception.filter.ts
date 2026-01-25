@@ -3,19 +3,18 @@ import {
   Catch,
   ArgumentsHost,
   HttpException,
-  HttpStatus,
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
 //Standardized HTTP error responses
 
-@Catch(HttpException)
+@Catch(HttpException) // Catch all HttpExceptions
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
 
   catch(exception: HttpException, host: ArgumentsHost) {
-    const ctx = host.switchToHttp();
+    const ctx = host.switchToHttp(); // Convierte el argumento host generico a un contexto HTTP especifico
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
     const status = exception.getStatus();
@@ -24,7 +23,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const error =
       typeof exceptionResponse === 'string'
         ? { message: exceptionResponse }
-        : (exceptionResponse as object);
+        : exceptionResponse;
 
     this.logger.error(
       `HTTP ${status} Error: ${request.method} ${request.url}`,

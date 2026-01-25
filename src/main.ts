@@ -21,23 +21,24 @@ async function bootstrap() {
   // Global prefix
   app.setGlobalPrefix('api');
 
-  // Validation
+  // Validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
+      whitelist: true, // Strip properties that do not have any decorators
+      forbidNonWhitelisted: true, // Throw an error if non-whitelisted properties are present
+      transform: true, // Automatically transform payloads to DTO instances
       transformOptions: {
-        enableImplicitConversion: true,
+        enableImplicitConversion: true, // Enable implicit type conversion
       },
     }),
   );
 
-  // Global filters and interceptors
-  app.useGlobalFilters(new HttpExceptionFilter());
+  // Global filters
+  app.useGlobalFilters(new HttpExceptionFilter()); // HTTP exception filter for consistent error responses
+  // Global interceptors
   app.useGlobalInterceptors(
-    new LoggingInterceptor(),
-    new TransformInterceptor(),
+    new LoggingInterceptor(), // Logging interceptor for request/response logging for monitoring
+    new TransformInterceptor(), // Transform interceptor for consistent response formatting
   );
 
   // CORS
@@ -60,10 +61,12 @@ async function bootstrap() {
     .addTag('credits', 'Credit management')
     .build();
 
+  // create swagger document api at /api/docs
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
   const port = process.env.PORT || 3001;
+
   await app.listen(port);
   console.log(`🚀 Application is running on: http://localhost:${port}`);
   console.log(
@@ -71,4 +74,7 @@ async function bootstrap() {
   );
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('❌ Error starting application:', err);
+  process.exit(1);
+});

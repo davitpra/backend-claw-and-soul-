@@ -4,7 +4,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // 2.1 Users
@@ -218,7 +219,7 @@ model ShopifyProduct {
   compareAtPrice   Decimal?  @map("compare_at_price")
   images           Json?
   variants         Json?
-  tags             String // SQLite does not support arrays, storing as CSV or empty string for now
+  tags             String[] // PostgreSQL supports arrays natively
   isActive         Boolean   @default(true) @map("is_active")
   creditsReward    Int       @default(0) @map("credits_reward")
   createdAt        DateTime  @default(now()) @map("created_at")

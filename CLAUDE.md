@@ -34,7 +34,7 @@ npm run test:debug         # Run with Node debugger
 
 ## Database & Prisma
 
-The project uses Prisma ORM with SQLite (better-sqlite3 adapter). Database file: `dev.db`
+The project uses Prisma ORM with PostgreSQL. Database: `clawandsoul_dev`
 
 ```bash
 # Generate Prisma client after schema changes
@@ -152,3 +152,49 @@ Environment variables are loaded from `.env.local` (priority) or `.env`.
 **CORS**: Configured for frontend at `process.env.FRONTEND_URL` (default: `http://localhost:3000`)
 
 **Port**: Defaults to 3001 if `PORT` env var not set
+
+## MCP Servers
+
+This project is configured with Model Context Protocol (MCP) servers to enhance Claude Code capabilities. See `MCP_SETUP.md` for detailed documentation.
+
+### Configured Servers
+
+1. **PostgreSQL MCP** - Direct database querying and schema inspection
+2. **Context7 MCP** - Up-to-date documentation for NestJS, Prisma, etc.
+3. **Redis MCP** - Cache inspection and session debugging
+4. **Shopify MCP** - Product and order management integration
+
+**Note**: For GitHub integration, use native `git` and `gh` CLI tools instead of an MCP server.
+
+### Quick Start
+
+1. Copy environment variables:
+   ```bash
+   cp .env.example .env.local
+   ```
+
+2. Restart Claude Code to load MCP servers
+
+3. Authenticate remote services:
+   ```
+   > /mcp
+   ```
+
+4. Use MCP capabilities in prompts:
+   ```
+   > "Show me all users in the database"
+   > "Create a GitHub issue for this bug"
+   > "Use context7 to show NestJS authentication docs"
+   ```
+
+### Managing MCP Servers
+
+```bash
+# List all MCP servers
+> /mcp
+
+# Or via CLI
+claude mcp list
+```
+
+Configuration file: `.mcp.json` (shared with team via git)

@@ -1,6 +1,6 @@
 -- CreateTable
 CREATE TABLE "users" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "password_hash" TEXT NOT NULL,
     "full_name" TEXT,
@@ -8,25 +8,28 @@ CREATE TABLE "users" (
     "shopify_customer_id" TEXT,
     "email_verified" BOOLEAN NOT NULL DEFAULT false,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
-    "last_login_at" DATETIME,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "last_login_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "user_credits" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "balance" INTEGER NOT NULL DEFAULT 0,
     "total_earned" INTEGER NOT NULL DEFAULT 0,
     "total_spent" INTEGER NOT NULL DEFAULT 0,
-    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "user_credits_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "user_credits_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "credit_transactions" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "type" TEXT NOT NULL,
     "amount" INTEGER NOT NULL,
@@ -34,13 +37,14 @@ CREATE TABLE "credit_transactions" (
     "description" TEXT,
     "reference_type" TEXT,
     "reference_id" TEXT,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "credit_transactions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "credit_transactions_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "pets" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "species" TEXT NOT NULL,
@@ -48,26 +52,28 @@ CREATE TABLE "pets" (
     "age" INTEGER,
     "description" TEXT,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "pets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "pets_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "pet_photos" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "pet_id" TEXT NOT NULL,
     "photo_url" TEXT NOT NULL,
     "photo_storage_key" TEXT NOT NULL,
     "is_primary" BOOLEAN NOT NULL DEFAULT false,
     "order_index" INTEGER NOT NULL DEFAULT 0,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "pet_photos_pet_id_fkey" FOREIGN KEY ("pet_id") REFERENCES "pets" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "pet_photos_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "styles" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "display_name" TEXT NOT NULL,
     "description" TEXT,
@@ -78,13 +84,15 @@ CREATE TABLE "styles" (
     "is_premium" BOOLEAN NOT NULL DEFAULT false,
     "parameters" JSONB,
     "sort_order" INTEGER NOT NULL DEFAULT 0,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "styles_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "generations" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "pet_id" TEXT NOT NULL,
     "pet_photo_id" TEXT,
@@ -103,60 +111,61 @@ CREATE TABLE "generations" (
     "metadata" JSONB,
     "is_public" BOOLEAN NOT NULL DEFAULT false,
     "is_favorite" BOOLEAN NOT NULL DEFAULT false,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "completed_at" DATETIME,
-    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "generations_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "generations_pet_id_fkey" FOREIGN KEY ("pet_id") REFERENCES "pets" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT "generations_pet_photo_id_fkey" FOREIGN KEY ("pet_photo_id") REFERENCES "pet_photos" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
-    CONSTRAINT "generations_style_id_fkey" FOREIGN KEY ("style_id") REFERENCES "styles" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "completed_at" TIMESTAMP(3),
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "generations_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "shopify_orders" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "user_id" TEXT,
     "shopify_order_id" TEXT NOT NULL,
     "order_number" TEXT NOT NULL,
     "email" TEXT NOT NULL,
-    "total_price" DECIMAL NOT NULL,
+    "total_price" DECIMAL(65,30) NOT NULL,
     "currency" TEXT NOT NULL DEFAULT 'USD',
     "financial_status" TEXT,
     "fulfillment_status" TEXT,
     "line_items" JSONB NOT NULL,
     "customer_info" JSONB,
     "credits_awarded" INTEGER NOT NULL DEFAULT 0,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "shopify_created_at" DATETIME,
-    "shopify_updated_at" DATETIME,
-    CONSTRAINT "shopify_orders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "shopify_created_at" TIMESTAMP(3),
+    "shopify_updated_at" TIMESTAMP(3),
+
+    CONSTRAINT "shopify_orders_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "shopify_products" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "shopify_product_id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "description" TEXT,
     "vendor" TEXT,
     "product_type" TEXT,
-    "price" DECIMAL,
-    "compare_at_price" DECIMAL,
+    "price" DECIMAL(65,30),
+    "compare_at_price" DECIMAL(65,30),
     "images" JSONB,
     "variants" JSONB,
-    "tags" TEXT NOT NULL,
+    "tags" TEXT[],
     "is_active" BOOLEAN NOT NULL DEFAULT true,
     "credits_reward" INTEGER NOT NULL DEFAULT 0,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "shopify_created_at" DATETIME,
-    "shopify_updated_at" DATETIME
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "shopify_created_at" TIMESTAMP(3),
+    "shopify_updated_at" TIMESTAMP(3),
+
+    CONSTRAINT "shopify_products_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "audit_logs" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "user_id" TEXT,
     "action" TEXT NOT NULL,
     "entity_type" TEXT,
@@ -164,19 +173,21 @@ CREATE TABLE "audit_logs" (
     "ip_address" TEXT,
     "user_agent" TEXT,
     "details" JSONB,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "audit_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "refresh_tokens" (
-    "id" TEXT NOT NULL PRIMARY KEY,
+    "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "token" TEXT NOT NULL,
-    "expires_at" DATETIME NOT NULL,
+    "expires_at" TIMESTAMP(3) NOT NULL,
     "is_revoked" BOOLEAN NOT NULL DEFAULT false,
-    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "refresh_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "refresh_tokens_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -307,3 +318,36 @@ CREATE INDEX "refresh_tokens_token_idx" ON "refresh_tokens"("token");
 
 -- CreateIndex
 CREATE INDEX "refresh_tokens_expires_at_idx" ON "refresh_tokens"("expires_at");
+
+-- AddForeignKey
+ALTER TABLE "user_credits" ADD CONSTRAINT "user_credits_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "credit_transactions" ADD CONSTRAINT "credit_transactions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "pets" ADD CONSTRAINT "pets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "pet_photos" ADD CONSTRAINT "pet_photos_pet_id_fkey" FOREIGN KEY ("pet_id") REFERENCES "pets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "generations" ADD CONSTRAINT "generations_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "generations" ADD CONSTRAINT "generations_pet_id_fkey" FOREIGN KEY ("pet_id") REFERENCES "pets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "generations" ADD CONSTRAINT "generations_pet_photo_id_fkey" FOREIGN KEY ("pet_photo_id") REFERENCES "pet_photos"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "generations" ADD CONSTRAINT "generations_style_id_fkey" FOREIGN KEY ("style_id") REFERENCES "styles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "shopify_orders" ADD CONSTRAINT "shopify_orders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

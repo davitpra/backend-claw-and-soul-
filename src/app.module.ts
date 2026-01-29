@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 
 // Config imports
@@ -27,6 +28,9 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
       load: [databaseConfig, redisConfig, jwtConfig],
       envFilePath: ['.env.local', '.env'],
     }),
+
+    // Schedule module for cron jobs
+    ScheduleModule.forRoot(),
 
     // Core modules
     PrismaModule,

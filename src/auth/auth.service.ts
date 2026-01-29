@@ -109,6 +109,14 @@ export class AuthService {
       });
 
       if (!storedToken || storedToken.isRevoked) {
+        // SECURITY: Token reuse detected - possible attack
+        // Revoke all tokens for this user as a security measure
+        if (storedToken) {
+          this.logger.warn(
+            `Token reuse detected for user ${storedToken.userId}. Revoking all tokens.`,
+          );
+          await this.revokeAllUserTokens(storedToken.userId);
+        }
         throw new UnauthorizedException('Invalid refresh token');
       }
 
@@ -116,6 +124,17 @@ export class AuthService {
         throw new UnauthorizedException('Refresh token expired');
       }
 
+      // TOKEN ROTATION: Revoke the old refresh token
+      await this.prisma.refreshToken.update({
+        where: { id: storedToken.id },
+        data: { isRevoked: true },
+      });
+
+      this.logger.log(
+        `Rotating refresh token for user ${payload.sub}. Old token revoked.`,
+      );
+
+      // Generate new tokens (including a new refresh token)
       const tokens = await this.generateTokens(
         payload.sub,
         payload.email,
@@ -124,6 +143,10 @@ export class AuthService {
 
       return tokens;
     } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      this.logger.error('Error refreshing token:', error);
       throw new UnauthorizedException('Invalid refresh token');
     }
   }
@@ -141,6 +164,91 @@ export class AuthService {
     }
   }
 
+  /**
+   * Get all active sessions for a user
+   */
+  async getActiveSessions(userId: string) {
+    const sessions = await this.prisma.refreshToken.findMany({
+      where: {
+        userId,
+        isRevoked: false,
+        expiresAt: { gt: new Date() },
+      },
+      select: {
+        id: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      sessions: sessions.map((session) => ({
+        id: session.id,
+        createdAt: session.createdAt,
+        expiresAt: session.expiresAt,
+      })),
+      total: sessions.length,
+    };
+  }
+
+  /**
+   * Revoke a specific session by token ID
+   */
+  async revokeSession(userId: string, tokenId: string) {
+    try {
+      // Ensure the token belongs to the user
+      const token = await this.prisma.refreshToken.findFirst({
+        where: {
+          id: tokenId,
+          userId,
+        },
+      });
+
+      if (!token) {
+        throw new UnauthorizedException('Session not found');
+      }
+
+      await this.prisma.refreshToken.update({
+        where: { id: tokenId },
+        data: { isRevoked: true },
+      });
+
+      this.logger.log(`Session ${tokenId} revoked for user ${userId}`);
+
+      return { message: 'Session revoked successfully' };
+    } catch (error) {
+      throw new UnauthorizedException('Failed to revoke session');
+    }
+  }
+
+  /**
+   * Revoke all sessions except the current one
+   */
+  async revokeAllOtherSessions(userId: string, currentToken?: string) {
+    try {
+      const result = await this.prisma.refreshToken.updateMany({
+        where: {
+          userId,
+          isRevoked: false,
+          ...(currentToken && { token: { not: currentToken } }),
+        },
+        data: { isRevoked: true },
+      });
+
+      this.logger.log(
+        `Revoked ${result.count} other sessions for user ${userId}`,
+      );
+
+      return {
+        message: 'All other sessions revoked successfully',
+        count: result.count,
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Failed to revoke sessions');
+    }
+  }
+
   private async generateTokens(userId: string, email: string, role: string) {
     const payload = { sub: userId, email, role };
 
@@ -154,6 +262,12 @@ export class AuthService {
         expiresIn: this.configService.get<string>('jwt.refreshExpiresIn'),
       }),
     ]);
+
+    // Clean up old/expired tokens for this user before creating a new one
+    await this.cleanupExpiredTokens(userId);
+
+    // Limit active refresh tokens per user (security measure)
+    await this.limitActiveTokens(userId, 5); // Max 5 active sessions
 
     // Store refresh token in database
     const expiresAt = new Date();
@@ -176,5 +290,95 @@ export class AuthService {
   private sanitizeUser(user: any) {
     const { passwordHash, ...result } = user;
     return result;
+  }
+
+  /**
+   * Revoke all refresh tokens for a user
+   * Used when token reuse is detected (security measure)
+   */
+  private async revokeAllUserTokens(userId: string): Promise<void> {
+    try {
+      await this.prisma.refreshToken.updateMany({
+        where: {
+          userId,
+          isRevoked: false,
+        },
+        data: {
+          isRevoked: true,
+        },
+      });
+
+      this.logger.warn(
+        `All refresh tokens revoked for user ${userId} due to security concern`,
+      );
+    } catch (error) {
+      this.logger.error('Error revoking user tokens:', error);
+    }
+  }
+
+  /**
+   * Clean up expired and revoked tokens for a user
+   * Helps keep the database clean and improves performance
+   */
+  private async cleanupExpiredTokens(userId: string): Promise<void> {
+    try {
+      const now = new Date();
+
+      const result = await this.prisma.refreshToken.deleteMany({
+        where: {
+          userId,
+          OR: [
+            { isRevoked: true },
+            { expiresAt: { lt: now } },
+          ],
+        },
+      });
+
+      if (result.count > 0) {
+        this.logger.log(
+          `Cleaned up ${result.count} expired/revoked tokens for user ${userId}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error('Error cleaning up tokens:', error);
+    }
+  }
+
+  /**
+   * Limit the number of active refresh tokens per user
+   * If limit is exceeded, revoke the oldest tokens
+   */
+  private async limitActiveTokens(
+    userId: string,
+    maxTokens: number,
+  ): Promise<void> {
+    try {
+      const activeTokens = await this.prisma.refreshToken.findMany({
+        where: {
+          userId,
+          isRevoked: false,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // If we have too many active tokens, revoke the oldest ones
+      if (activeTokens.length >= maxTokens) {
+        const tokensToRevoke = activeTokens.slice(maxTokens - 1);
+
+        await this.prisma.refreshToken.updateMany({
+          where: {
+            id: { in: tokensToRevoke.map((t) => t.id) },
+          },
+          data: { isRevoked: true },
+        });
+
+        this.logger.log(
+          `Revoked ${tokensToRevoke.length} oldest tokens for user ${userId} (limit: ${maxTokens})`,
+        );
+      }
+    } catch (error) {
+      this.logger.error('Error limiting active tokens:', error);
+    }
   }
 }

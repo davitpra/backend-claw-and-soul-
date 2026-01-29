@@ -10,65 +10,26 @@ datasource db {
 
 // 2.1 Users
 model User {
-  id                String    @id @default(uuid())
-  email             String    @unique
-  passwordHash      String    @map("password_hash")
-  fullName          String?   @map("full_name")
-  role              String    @default("user") // Enum: user, premium, admin
-  shopifyCustomerId String?   @unique @map("shopify_customer_id")
-  emailVerified     Boolean   @default(false) @map("email_verified")
-  isActive          Boolean   @default(true) @map("is_active")
-  lastLoginAt       DateTime? @map("last_login_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
+  id            String    @id @default(uuid())
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  fullName      String?   @map("full_name")
+  role          String    @default("user") // Enum: user, premium, admin
+  emailVerified Boolean   @default(false) @map("email_verified")
+  isActive      Boolean   @default(true) @map("is_active")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
 
   // Relations
-  credits            UserCredits?
-  creditTransactions CreditTransaction[]
-  pets               Pet[]
-  generations        Generation[]
-  shopifyOrders      ShopifyOrder[]
-  auditLogs          AuditLog[]
-  refreshTokens      RefreshToken[]
+  pets          Pet[]
+  generations   Generation[]
+  auditLogs     AuditLog[]
+  refreshTokens RefreshToken[]
 
   @@index([email])
-  @@index([shopifyCustomerId])
   @@index([role])
   @@map("users")
-}
-
-// 2.2 UserCredits
-model UserCredits {
-  id          String   @id @default(uuid())
-  userId      String   @unique @map("user_id")
-  balance     Int      @default(0)
-  totalEarned Int      @default(0) @map("total_earned")
-  totalSpent  Int      @default(0) @map("total_spent")
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@map("user_credits")
-}
-
-// 2.3 CreditTransactions
-model CreditTransaction {
-  id            String   @id @default(uuid())
-  userId        String   @map("user_id")
-  type          String // Enum: earned, spent, refund, bonus
-  amount        Int
-  balanceAfter  Int      @map("balance_after")
-  description   String?
-  referenceType String?  @map("reference_type")
-  referenceId   String?  @map("reference_id")
-  createdAt     DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([createdAt])
-  @@map("credit_transactions")
 }
 
 // 2.4 Pets
@@ -121,7 +82,6 @@ model Style {
   description String?
   category    String
   previewUrl  String?  @map("preview_url")
-  costCredits Int      @default(1) @map("cost_credits")
   isActive    Boolean  @default(true) @map("is_active")
   isPremium   Boolean  @default(false) @map("is_premium")
   parameters  Json?
@@ -153,7 +113,6 @@ model Generation {
   resultStorageKey      String?   @map("result_storage_key")
   thumbnailUrl          String?   @map("thumbnail_url")
   provider              String
-  costCredits           Int       @map("cost_credits")
   processingTimeSeconds Int?      @map("processing_time_seconds")
   errorMessage          String?   @map("error_message")
   metadata              Json?
@@ -177,59 +136,6 @@ model Generation {
   @@index([userId, type])
   @@index([createdAt(sort: Desc)])
   @@map("generations")
-}
-
-// 2.8 ShopifyOrders
-model ShopifyOrder {
-  id                String    @id @default(uuid())
-  userId            String?   @map("user_id")
-  shopifyOrderId    String    @unique @map("shopify_order_id")
-  orderNumber       String    @map("order_number")
-  email             String
-  totalPrice        Decimal   @map("total_price")
-  currency          String    @default("USD")
-  financialStatus   String?   @map("financial_status")
-  fulfillmentStatus String?   @map("fulfillment_status")
-  lineItems         Json      @map("line_items")
-  customerInfo      Json?     @map("customer_info")
-  creditsAwarded    Int       @default(0) @map("credits_awarded")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
-  shopifyCreatedAt  DateTime? @map("shopify_created_at")
-  shopifyUpdatedAt  DateTime? @map("shopify_updated_at")
-
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@index([userId])
-  @@index([shopifyOrderId])
-  @@index([email])
-  @@index([createdAt(sort: Desc)])
-  @@map("shopify_orders")
-}
-
-// 2.9 ShopifyProducts
-model ShopifyProduct {
-  id               String    @id @default(uuid())
-  shopifyProductId String    @unique @map("shopify_product_id")
-  title            String
-  description      String?
-  vendor           String?
-  productType      String?   @map("product_type")
-  price            Decimal?
-  compareAtPrice   Decimal?  @map("compare_at_price")
-  images           Json?
-  variants         Json?
-  tags             String[] // PostgreSQL supports arrays natively
-  isActive         Boolean   @default(true) @map("is_active")
-  creditsReward    Int       @default(0) @map("credits_reward")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
-  shopifyCreatedAt DateTime? @map("shopify_created_at")
-  shopifyUpdatedAt DateTime? @map("shopify_updated_at")
-
-  @@index([shopifyProductId])
-  @@index([isActive])
-  @@map("shopify_products")
 }
 
 // 2.10 AuditLogs

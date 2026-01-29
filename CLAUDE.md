@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ClawAndSoul Backend is a NestJS API for an AI-powered pet image and video generation platform. Users upload pet photos, purchase credits through Shopify integration, and generate stylized AI content of their pets.
+ClawAndSoul Backend is a NestJS API for an AI-powered pet image and video generation platform. Users upload pet photos and generate unlimited free stylized AI content of their pets.
 
 ## Development Commands
 
@@ -61,9 +61,8 @@ The application follows NestJS modular architecture with domain-driven modules:
 - **auth**: JWT-based authentication with refresh tokens, passport strategies
 - **users**: User management and profile operations
 - **pets**: Pet profiles and photo management
-- **styles**: AI art style catalog (categories, pricing, parameters)
+- **styles**: AI art style catalog (categories, parameters)
 - **generations**: Core AI generation engine (images/videos), status tracking, provider abstraction
-- **credits**: Credit balance, transactions, Shopify purchase integration
 - **storage**: AWS S3 file upload/retrieval service (global module)
 - **prisma**: Database service (global module)
 
@@ -73,7 +72,6 @@ Configuration is centralized in `src/config/`:
 - `database.config.ts` - Database connection settings
 - `jwt.config.ts` - JWT secret and expiration
 - `redis.config.ts` - Redis/caching configuration
-- `shopify.config.ts` - Shopify API credentials
 
 All configs loaded globally via `ConfigModule.forRoot()` in `app.module.ts`.
 
@@ -83,7 +81,6 @@ All configs loaded globally via `ConfigModule.forRoot()` in `app.module.ts`.
 - **@Public() Decorator**: Use on controllers/routes to bypass authentication (e.g., login, register)
 - **@Roles() Decorator**: Restrict endpoints to specific user roles (user, premium, admin)
 - **@CurrentUser() Decorator**: Inject authenticated user into route handlers
-- **@RequiredCredits() Decorator**: Enforce minimum credit balance for operations
 
 Example:
 ```typescript
@@ -95,7 +92,6 @@ async login() { ... }
 @Delete('users/:id')
 async deleteUser() { ... }
 
-@RequiredCredits(10)  // Requires 10 credits
 @Post('generate')
 async generate(@CurrentUser() user: User) { ... }
 ```
@@ -117,7 +113,7 @@ constructor(private prisma: PrismaService) {}
 **DTOs**: Use class-validator decorators. All DTOs auto-validated before reaching controllers.
 
 **Database Relations**: The schema uses cascade deletes extensively:
-- Deleting a User cascades to pets, credits, generations, etc.
+- Deleting a User cascades to pets, generations, etc.
 - Deleting a Pet cascades to photos and generations
 - Use `onDelete: SetNull` for optional relations (e.g., generations can exist without petPhoto)
 
@@ -130,20 +126,21 @@ All endpoints prefixed with `/api` (configured in `main.ts`).
 ## Database Schema Highlights
 
 **Core Entities**:
-- **User**: Stores user credentials, role (user/premium/admin), Shopify integration
-- **UserCredits**: Separate table for credit balance tracking
+- **User**: Stores user credentials, role (user/premium/admin)
 - **Pet**: User-owned pet profiles (species, breed, age)
 - **PetPhoto**: Photos of pets with storage keys, order management
-- **Style**: AI art styles with credit costs, premium flags, parameters
+- **Style**: AI art styles with premium flags and parameters
 - **Generation**: AI generation jobs with status tracking (pending/processing/completed/failed)
-- **ShopifyOrder/ShopifyProduct**: Shopify integration for credit purchases
 
 **Enums** (stored as strings):
 - User role: `user`, `premium`, `admin`
 - Pet species: `dog`, `cat`, `bird`, `rabbit`, `other`
 - Generation type: `image`, `video`
 - Generation status: `pending`, `processing`, `completed`, `failed`
-- Credit transaction type: `earned`, `spent`, `refund`, `bonus`
+
+## Free Generation Model
+
+All image and video generations are FREE and UNLIMITED for all users. There are no credit checks or payment requirements. The role system (user/premium/admin) is preserved for future feature differentiation.
 
 ## Configuration
 

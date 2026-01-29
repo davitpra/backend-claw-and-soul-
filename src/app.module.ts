@@ -6,7 +6,6 @@ import { APP_GUARD } from '@nestjs/core';
 import databaseConfig from './config/database.config';
 import redisConfig from './config/redis.config';
 import jwtConfig from './config/jwt.config';
-import shopifyConfig from './config/shopify.config';
 
 // Module imports
 import { PrismaModule } from './prisma/prisma.module';
@@ -15,7 +14,6 @@ import { UsersModule } from './users/users.module';
 import { PetsModule } from './pets/pets.module';
 import { StylesModule } from './styles/styles.module';
 import { GenerationsModule } from './generations/generations.module';
-import { CreditsModule } from './credits/credits.module';
 import { StorageModule } from './storage/storage.module';
 
 // Guards
@@ -26,7 +24,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     // Global configuration
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, redisConfig, jwtConfig, shopifyConfig],
+      load: [databaseConfig, redisConfig, jwtConfig],
       envFilePath: ['.env.local', '.env'],
     }),
 
@@ -37,7 +35,6 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     PetsModule,
     StylesModule,
     GenerationsModule,
-    CreditsModule,
     StorageModule,
   ],
   providers: [

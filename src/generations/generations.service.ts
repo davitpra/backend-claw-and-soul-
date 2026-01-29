@@ -5,7 +5,6 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreditsService } from '../credits/credits.service';
 import { PetsService } from '../pets/pets.service';
 import { StylesService } from '../styles/styles.service';
 import { CreateImageGenerationDto } from './dto/create-image-generation.dto';
@@ -21,7 +20,6 @@ export class GenerationsService {
 
   constructor(
     private prisma: PrismaService,
-    private creditsService: CreditsService,
     private petsService: PetsService,
     private stylesService: StylesService,
   ) {}
@@ -36,79 +34,38 @@ export class GenerationsService {
       throw new BadRequestException('Pet does not belong to user');
     }
 
-    // Get style and cost
-    const style = await this.stylesService.findOne(createDto.styleId);
-    const cost = style.costCredits;
+    // Validate style exists
+    await this.stylesService.findOne(createDto.styleId);
 
-    // Check credits
-    const hasCredits = await this.creditsService.hasEnoughCredits(userId, cost);
-    if (!hasCredits) {
-      throw new BadRequestException('Insufficient credits');
-    }
-
-    // Reserve credits and create generation
-    return this.prisma.$transaction(async (tx) => {
-      // Deduct credits
-      const userCredit = await tx.userCredits.findUnique({
-        where: { userId },
-      });
-
-      if (!userCredit) {
-        throw new BadRequestException('User credits not found');
-      }
-
-      await tx.userCredits.update({
-        where: { userId },
-        data: {
-          balance: userCredit.balance - cost,
-          totalSpent: userCredit.totalSpent + cost,
+    // Create generation record (no credit checks - all generations are free)
+    const generation = await this.prisma.generation.create({
+      data: {
+        userId,
+        petId: createDto.petId,
+        petPhotoId: createDto.petPhotoId,
+        styleId: createDto.styleId,
+        type: 'image',
+        status: 'pending',
+        prompt: createDto.prompt || `${pet.species} ${pet.breed || ''}`,
+        negativePrompt: createDto.negativePrompt,
+        provider: createDto.provider || 'openai',
+        metadata: {
+          width: createDto.width || 1024,
+          height: createDto.height || 1024,
         },
-      });
-
-      // Create generation record
-      const generation = await tx.generation.create({
-        data: {
-          userId,
-          petId: createDto.petId,
-          petPhotoId: createDto.petPhotoId,
-          styleId: createDto.styleId,
-          type: 'image',
-          status: 'pending',
-          prompt: createDto.prompt || `${pet.species} ${pet.breed || ''}`,
-          negativePrompt: createDto.negativePrompt,
-          provider: createDto.provider || 'openai',
-          costCredits: cost,
-          metadata: {
-            width: createDto.width || 1024,
-            height: createDto.height || 1024,
-          },
-        },
-        include: {
-          pet: true,
-          style: true,
-        },
-      });
-
-      // Create transaction record
-      await tx.creditTransaction.create({
-        data: {
-          userId,
-          type: 'spent',
-          amount: -cost,
-          balanceAfter: userCredit.balance - cost,
-          description: `Image generation - ${style.displayName}`,
-          referenceType: 'generation',
-          referenceId: generation.id,
-        },
-      });
-
-      this.logger.log(`Image generation created: ${generation.id}`);
-
-      // TODO: Enqueue job in Bull Queue
-      // await this.imageQueue.add('generate', { generationId: generation.id });
-
-      return generation;
+      },
+      include: {
+        pet: true,
+        style: true,
+      },
     });
+
+    this.logger.log(`Image generation created: ${generation.id}`);
+
+    // TODO: Enqueue job in Bull Queue
+    // await this.imageQueue.add('generate', { generationId: generation.id });
+
+    return generation;
   }
 
   async createVideoGeneration(
@@ -139,77 +96,38 @@ export class GenerationsService {
       throw new BadRequestException('Source generation must be completed');
     }
 
-    // Calculate cost based on duration
+    // Create generation record (no credit checks - all generations are free)
     const duration = createDto.duration || 3;
-    const cost = duration; // 1 credit per second
 
-    // Check credits
-    const hasCredits = await this.creditsService.hasEnoughCredits(userId, cost);
-    if (!hasCredits) {
-      throw new BadRequestException('Insufficient credits');
-    }
-
-    // Reserve credits and create generation
-    return this.prisma.$transaction(async (tx) => {
-      const userCredit = await tx.userCredits.findUnique({
-        where: { userId },
-      });
-
-      if (!userCredit) {
-        throw new BadRequestException('User credits not found');
-      }
-
-      await tx.userCredits.update({
-        where: { userId },
-        data: {
-          balance: userCredit.balance - cost,
-          totalSpent: userCredit.totalSpent + cost,
+    const generation = await this.prisma.generation.create({
+      data: {
+        userId,
+        petId: sourceGeneration.petId,
+        petPhotoId: sourceGeneration.petPhotoId,
+        styleId: sourceGeneration.styleId,
+        type: 'video',
+        status: 'pending',
+        prompt: sourceGeneration.prompt,
+        provider: createDto.provider || 'runway',
+        metadata: {
+          sourceGenerationId: createDto.sourceGenerationId,
+          sourceImageUrl: sourceGeneration.resultUrl,
+          duration,
+          motion: createDto.motion || 'medium',
         },
-      });
-
-      const generation = await tx.generation.create({
-        data: {
-          userId,
-          petId: sourceGeneration.petId,
-          petPhotoId: sourceGeneration.petPhotoId,
-          styleId: sourceGeneration.styleId,
-          type: 'video',
-          status: 'pending',
-          prompt: sourceGeneration.prompt,
-          provider: createDto.provider || 'runway',
-          costCredits: cost,
-          metadata: {
-            sourceGenerationId: createDto.sourceGenerationId,
-            sourceImageUrl: sourceGeneration.resultUrl,
-            duration,
-            motion: createDto.motion || 'medium',
-          },
-        },
-        include: {
-          pet: true,
-          style: true,
-        },
-      });
-
-      await tx.creditTransaction.create({
-        data: {
-          userId,
-          type: 'spent',
-          amount: -cost,
-          balanceAfter: userCredit.balance - cost,
-          description: `Video generation - ${duration}s`,
-          referenceType: 'generation',
-          referenceId: generation.id,
-        },
-      });
-
-      this.logger.log(`Video generation created: ${generation.id}`);
-
-      // TODO: Enqueue job in Bull Queue
-      // await this.videoQueue.add('generate', { generationId: generation.id });
-
-      return generation;
+      },
+      include: {
+        pet: true,
+        style: true,
+      },
     });
+
+    this.logger.log(`Video generation created: ${generation.id}`);
+
+    // TODO: Enqueue job in Bull Queue
+    // await this.videoQueue.add('generate', { generationId: generation.id });
+
+    return generation;
   }
 
   async findUserGenerations(

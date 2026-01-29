@@ -35,53 +35,22 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(registerDto.password, 12);
 
     try {
-      // Create user and initialize credits in a transaction
-      const result = await this.prisma.$transaction(async (tx) => {
-        // Create user
-        const user = await tx.user.create({
-          data: {
-            email: registerDto.email,
-            passwordHash: hashedPassword,
-            fullName: registerDto.fullName,
-          },
-        });
-
-        // Initialize credits (10 free credits)
-        const userCredits = await tx.userCredits.create({
-          data: {
-            userId: user.id,
-            balance: 10,
-            totalEarned: 10,
-            totalSpent: 0,
-          },
-        });
-
-        // Create initial transaction record
-        await tx.creditTransaction.create({
-          data: {
-            userId: user.id,
-            type: 'bonus',
-            amount: 10,
-            balanceAfter: 10,
-            description: 'Welcome bonus',
-            referenceType: 'bonus',
-          },
-        });
-
-        return { user, userCredits };
+      // Create user (no credit initialization - all generations are free)
+      const user = await this.prisma.user.create({
+        data: {
+          email: registerDto.email,
+          passwordHash: hashedPassword,
+          fullName: registerDto.fullName,
+        },
       });
 
-      this.logger.log(`New user registered: ${result.user.email}`);
+      this.logger.log(`New user registered: ${user.email}`);
 
       // Generate tokens
-      const tokens = await this.generateTokens(
-        result.user.id,
-        result.user.email,
-        result.user.role,
-      );
+      const tokens = await this.generateTokens(user.id, user.email, user.role);
 
       return {
-        user: this.sanitizeUser(result.user),
+        user: this.sanitizeUser(user),
         ...tokens,
       };
     } catch (error) {

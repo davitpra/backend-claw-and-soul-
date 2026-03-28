@@ -1,15 +1,15 @@
 # Diagramas de Flujo - ClawAndSoul Backend
 
-Este documento describe los flujos de trabajo principales del backend de ClawAndSoul, una plataforma de generación de contenido AI para mascotas.
+Este documento describe los flujos de trabajo principales del backend de ClawAndSoul, una plataforma de generación de contenido AI para mascotas con generaciones **gratuitas e ilimitadas** para todos los usuarios.
 
 ## Tabla de Contenidos
 
 - [Pipeline de Request/Response](#pipeline-de-requestresponse)
 - [Flujo de Autenticación](#flujo-de-autenticación)
 - [Flujo de Generación de Contenido AI](#flujo-de-generación-de-contenido-ai)
-- [Flujo de Compra de Créditos (Shopify)](#flujo-de-compra-de-créditos-shopify)
 - [Arquitectura de Módulos](#arquitectura-de-módulos)
 - [Sistema de Guards y Decoradores](#sistema-de-guards-y-decoradores)
+- [Tabla de Endpoints](#tabla-de-endpoints)
 
 ---
 
@@ -23,7 +23,7 @@ graph TD
     B --> C[LoggingInterceptor<br/>Registra: → METHOD URL]
     C --> D{JwtAuthGuard}
     D -->|Tiene @Public| F[ValidationPipe]
-    D -->|Sin @Public| E{Token JWT válido?}
+    D -->|Sin @Public| E{Token JWT válido en cookie?}
     E -->|No| Z1[❌ 401 Unauthorized]
     E -->|Sí| F
     F --> G{Validación DTO OK?}
@@ -52,7 +52,7 @@ graph TD
 3. **JwtAuthGuard** ([jwt-auth.guard.ts](src/common/guards/jwt-auth.guard.ts))
    - Aplicado globalmente (todos los endpoints requieren auth)
    - Excepción: endpoints con decorador `@Public()`
-   - Valida token JWT en header `Authorization: Bearer <token>`
+   - Lee el token JWT desde la cookie httpOnly `accessToken`
 
 4. **ValidationPipe** ([main.ts:25](src/main.ts#L25))
    - Valida DTOs automáticamente usando `class-validator`
@@ -78,6 +78,11 @@ graph TD
 
 ## Flujo de Autenticación
 
+Los tokens JWT se almacenan como **cookies httpOnly** (nunca en el body de respuesta). Esto previene ataques XSS.
+
+- **Access Token**: cookie `accessToken`, vida útil 15 minutos
+- **Refresh Token**: cookie `refreshToken`, vida útil 7 días, almacenado en base de datos
+
 ### Registro de Usuario
 
 ```mermaid
@@ -86,19 +91,18 @@ sequenceDiagram
     participant API as Auth Controller
     participant S as Auth Service
     participant DB as Prisma/Database
-    participant CR as Credits Service
 
-    C->>API: POST /api/auth/register
+    C->>API: POST /api/auth/register<br/>{email, password, fullName}
     Note over API: @Public() - No requiere auth
     API->>S: register(dto)
     S->>DB: Verificar email único
     alt Email ya existe
         DB-->>C: ❌ 409 Conflict
     else Email disponible
-        S->>DB: Crear usuario (hash password)
-        S->>CR: Crear UserCredits (balance: 0)
+        S->>DB: Crear usuario (hash password, bcrypt)
         S->>S: Generar tokens JWT
-        S-->>C: ✅ { accessToken, refreshToken, user }
+        S->>DB: Guardar refresh token
+        API-->>C: ✅ Set-Cookie: accessToken, refreshToken (httpOnly)<br/>Body: { user }
     end
 ```
 
@@ -122,37 +126,99 @@ sequenceDiagram
         alt Password incorrecto
             S-->>C: ❌ 401 Unauthorized
         else Password correcto
+            S->>DB: Actualizar lastLoginAt
             S->>S: Generar JWT tokens
-            S-->>C: ✅ { accessToken, refreshToken, user }
+            S->>DB: Limpiar tokens expirados/revocados
+            S->>DB: Limitar a máx. 5 sesiones activas
+            S->>DB: Guardar nuevo refresh token
+            API-->>C: ✅ Set-Cookie: accessToken, refreshToken (httpOnly)<br/>Body: { user }
         end
     end
 ```
 
-### Refresh Token
+### Refresh Token (con Rotación)
 
 ```mermaid
 sequenceDiagram
     participant C as Cliente
     participant API as Auth Controller
     participant S as Auth Service
+    participant DB as Prisma/Database
 
-    C->>API: POST /api/auth/refresh<br/>{refreshToken}
-    Note over API: @Public()
-    API->>S: refreshToken(token)
-    S->>S: Verificar refresh token
-    alt Token inválido/expirado
+    C->>API: POST /api/auth/refresh
+    Note over API: @Public() - Lee cookie refreshToken
+    API->>S: refreshToken(tokenDeCookie)
+    S->>S: Verificar firma JWT
+    S->>DB: Buscar token en base de datos
+
+    alt Token no existe en DB
+        S-->>C: ❌ 401 Unauthorized
+    else Token existe pero está revocado
+        Note over S: ⚠️ DETECCIÓN DE REUSO - posible ataque
+        S->>DB: Revocar TODOS los tokens del usuario
+        S-->>C: ❌ 401 Unauthorized
+    else Token expirado
         S-->>C: ❌ 401 Unauthorized
     else Token válido
-        S->>S: Generar nuevo access token
-        S-->>C: ✅ { accessToken }
+        Note over S: TOKEN ROTATION
+        S->>DB: Revocar token anterior (isRevoked: true)
+        S->>S: Generar nuevos tokens JWT
+        S->>DB: Guardar nuevo refresh token
+        API-->>C: ✅ Set-Cookie: nuevos accessToken, refreshToken (httpOnly)<br/>Body: { message: "Token refreshed successfully" }
     end
+```
+
+### Logout
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant API as Auth Controller
+    participant S as Auth Service
+    participant DB as Prisma/Database
+
+    C->>API: POST /api/auth/logout
+    Note over API: @Public() - Lee cookie refreshToken
+    API->>S: logout(tokenDeCookie)
+    S->>DB: Marcar refresh token como revocado
+    API->>API: Limpiar cookies accessToken y refreshToken
+    API-->>C: ✅ { message: "Logged out successfully" }
+```
+
+### Gestión de Sesiones
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant API as Auth Controller
+    participant S as Auth Service
+    participant DB as Prisma/Database
+
+    Note over C,DB: Ver sesiones activas
+    C->>API: GET /api/auth/sessions
+    API->>S: getActiveSessions(userId)
+    S->>DB: Buscar tokens activos (no revocados, no expirados)
+    S-->>C: ✅ { sessions: [{id, createdAt, expiresAt}], total }
+
+    Note over C,DB: Revocar sesión específica
+    C->>API: POST /api/auth/sessions/revoke/:tokenId
+    API->>S: revokeSession(userId, tokenId)
+    S->>DB: Verificar token pertenece al usuario
+    S->>DB: Marcar token como revocado
+    S-->>C: ✅ { message: "Session revoked successfully" }
+
+    Note over C,DB: Revocar todas las otras sesiones
+    C->>API: POST /api/auth/sessions/revoke-all
+    API->>S: revokeAllOtherSessions(userId, currentToken)
+    S->>DB: Revocar todos los tokens excepto el actual
+    S-->>C: ✅ { message: "...", count: N }
 ```
 
 ### Protección de Endpoints
 
 ```mermaid
 graph LR
-    A[Request con JWT] --> B{Tiene @Public?}
+    A[Request con cookie accessToken] --> B{Tiene @Public?}
     B -->|Sí| E[✅ Permitir acceso]
     B -->|No| C{Token válido?}
     C -->|No| D[❌ 401 Unauthorized]
@@ -160,64 +226,91 @@ graph LR
     F -->|No| E
     F -->|Sí| G{Rol permitido?}
     G -->|No| H[❌ 403 Forbidden]
-    G -->|Sí| I{Tiene @RequiredCredits?}
-    I -->|No| E
-    I -->|Sí| J{Créditos suficientes?}
-    J -->|No| K[❌ 400 Bad Request]
-    J -->|Sí| E
+    G -->|Sí| E
 ```
 
 ---
 
 ## Flujo de Generación de Contenido AI
 
-Este es el flujo más complejo del sistema, manejando generaciones de imágenes y videos con IA.
+Todas las generaciones son **gratuitas e ilimitadas**. No hay verificación ni deducción de créditos.
 
-### Flujo Completo de Generación
+### Flujo de Generación de Imagen
 
 ```mermaid
 sequenceDiagram
     participant C as Cliente
     participant API as Generations Controller
     participant S as Generations Service
-    participant CR as Credits Service
     participant DB as Prisma/Database
     participant AI as Proveedor AI
     participant ST as Storage Service (S3)
 
-    C->>API: POST /api/generations/image<br/>{petId, styleId, prompt}
-    Note over API: Requiere JWT
+    C->>API: POST /api/generations/image<br/>{petId, styleId, petPhotoId?, prompt?}
+    Note over API: Requiere JWT (cookie)
     API->>S: createImageGeneration(userId, dto)
 
-    S->>DB: Verificar pet pertenece a user
+    S->>DB: Verificar pet pertenece al usuario
     alt Pet no pertenece al usuario
         DB-->>C: ❌ 403 Forbidden
     end
 
-    S->>DB: Obtener estilo y costo
-    S->>CR: Verificar balance de créditos
+    S->>DB: Obtener datos del pet (species, breed)
+    Note over S: Si no se provee prompt,<br/>se auto-genera: "{species} {breed}"
 
-    alt Créditos insuficientes
-        CR-->>C: ❌ 400 Insufficient credits
-    else Créditos suficientes
-        S->>DB: Crear Generation (status: pending)
-        S->>CR: Deducir créditos
-        S->>DB: Registrar transacción (type: spent)
-        S-->>C: ✅ {id, status: "pending", ...}
+    S->>DB: Crear Generation (status: pending)
+    S-->>C: ✅ { id, status: "pending", ... }
 
-        Note over S,AI: Proceso asíncrono
-        S->>AI: Enviar request generación
+    Note over S,AI: Proceso actual: sincrónico<br/>(Bull Queue es TODO pendiente)
+    S->>AI: Enviar request de generación
 
-        alt Generación exitosa
-            AI-->>S: URL imagen generada
-            S->>ST: Descargar y subir a S3
-            ST-->>S: URL en S3
-            S->>DB: Actualizar Generation<br/>(status: completed, resultUrl)
-        else Generación fallida
+    alt Generación exitosa
+        AI-->>S: URL imagen generada
+        S->>ST: Descargar y subir a S3
+        ST-->>S: URL en S3
+        S->>DB: Actualizar Generation<br/>(status: completed, resultUrl)
+    else Generación fallida
+        AI-->>S: ❌ Error
+        S->>DB: Actualizar Generation<br/>(status: failed, errorMessage)
+    end
+```
+
+### Flujo de Generación de Video
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant API as Generations Controller
+    participant S as Generations Service
+    participant DB as Prisma/Database
+    participant AI as Proveedor AI
+    participant ST as Storage Service (S3)
+
+    C->>API: POST /api/generations/video<br/>{sourceGenerationId}
+    Note over API: Requiere JWT (cookie)
+    API->>S: createVideoGeneration(userId, dto)
+
+    S->>DB: Buscar generation fuente por sourceGenerationId
+    alt Generation no encontrada
+        DB-->>C: ❌ 404 Not Found
+    else Generation no pertenece al usuario
+        DB-->>C: ❌ 403 Forbidden
+    else Generation no es de tipo "image"
+        DB-->>C: ❌ 400 Bad Request
+    else Generation no está "completed"
+        DB-->>C: ❌ 400 Bad Request
+    else Generation válida
+        S->>DB: Crear Generation video<br/>(hereda petId, styleId, prompt de la imagen fuente)
+        S-->>C: ✅ { id, status: "pending", ... }
+
+        S->>AI: Enviar request de video con sourceImageUrl
+        alt Video exitoso
+            AI-->>S: URL video generado
+            S->>ST: Subir a S3
+            S->>DB: Actualizar Generation (status: completed)
+        else Video fallido
             AI-->>S: ❌ Error
-            S->>DB: Actualizar Generation<br/>(status: failed, errorMessage)
-            S->>CR: Reembolsar créditos
-            S->>DB: Registrar transacción (type: refund)
+            S->>DB: Actualizar Generation (status: failed)
         end
     end
 ```
@@ -230,22 +323,22 @@ stateDiagram-v2
     pending --> processing: AI inicia proceso
     processing --> completed: Éxito + subir a S3
     processing --> failed: Error en AI
-    failed --> [*]: Reembolso créditos
+    failed --> [*]: Error registrado (sin reembolso)
     completed --> [*]: Entrega al usuario
 
     note right of pending
-        Créditos deducidos
+        Sin costo de créditos
         Request enviado a AI
     end note
 
     note right of completed
-        Imagen en S3
+        Imagen/video en S3
         Usuario puede descargar
     end note
 
     note right of failed
-        Créditos reembolsados
         Error registrado
+        Usuario puede reintentar
     end note
 ```
 
@@ -259,75 +352,11 @@ sequenceDiagram
     participant DB as Prisma/Database
 
     C->>API: GET /api/generations?page=1&limit=20&type=image
-    API->>S: findUserGenerations(userId, filters)
+    API->>S: findUserGenerations(userId, page, limit, type)
     S->>DB: Query con filtros + paginación
     DB-->>S: [Lista de generaciones]
     S->>S: Calcular metadata paginación
     S-->>C: ✅ {data: [...], meta: {total, page, ...}}
-```
-
----
-
-## Flujo de Compra de Créditos (Shopify)
-
-Integración con Shopify para compra de paquetes de créditos.
-
-```mermaid
-sequenceDiagram
-    participant U as Usuario
-    participant SH as Shopify Store
-    participant API as Credits Controller
-    participant S as Credits Service
-    participant US as Users Service
-    participant DB as Prisma/Database
-
-    U->>SH: Compra paquete de créditos
-    SH->>SH: Procesa pago
-    SH->>API: POST /api/credits/shopify-webhook<br/>{order, customer}
-    Note over API: @Public() - Webhook
-
-    API->>S: processShopifyOrder(webhookData)
-    S->>S: Validar signature Shopify
-
-    alt Signature inválida
-        S-->>SH: ❌ 401 Unauthorized
-    else Signature válida
-        S->>DB: Buscar usuario por email
-
-        alt Usuario no existe
-            S->>US: Crear usuario automático
-            US->>DB: Crear User + UserCredits
-        end
-
-        S->>DB: Buscar producto Shopify
-        alt Producto no configurado
-            S-->>SH: ❌ 404 Product not found
-        else Producto existe
-            S->>DB: Crear ShopifyOrder
-            S->>S: Calcular créditos a otorgar
-            S->>DB: Incrementar balance usuario
-            S->>DB: Registrar transacción (type: earned)
-            S-->>SH: ✅ 200 OK
-
-            Note over U: Usuario recibe email<br/>confirmación de créditos
-        end
-    end
-```
-
-### Tipos de Transacciones de Créditos
-
-```mermaid
-graph TD
-    A[Credit Transaction] --> B{Tipo}
-    B -->|earned| C[Compra Shopify<br/>Bonus/Promoción]
-    B -->|spent| D[Generación AI<br/>Consumo de créditos]
-    B -->|refund| E[Generación fallida<br/>Devolución de créditos]
-    B -->|bonus| F[Créditos gratis<br/>Regalo admin]
-
-    style C fill:#90EE90
-    style D fill:#FFB6C6
-    style E fill:#FFD700
-    style F fill:#87CEEB
 ```
 
 ---
@@ -345,12 +374,11 @@ graph TB
     end
 
     subgraph "Feature Modules"
-        AM[AuthModule<br/>JWT + Passport]
+        AM[AuthModule<br/>JWT + Passport + Sesiones]
         UM[UsersModule<br/>User Management]
         PE[PetsModule<br/>Pet Profiles]
         ST[StylesModule<br/>AI Styles Catalog]
         GM[GenerationsModule<br/>AI Engine]
-        CR[CreditsModule<br/>Credits + Shopify]
     end
 
     CM -.->|Config| AM
@@ -358,14 +386,12 @@ graph TB
     CM -.->|Config| PE
     CM -.->|Config| ST
     CM -.->|Config| GM
-    CM -.->|Config| CR
 
     PM -.->|Database| AM
     PM -.->|Database| UM
     PM -.->|Database| PE
     PM -.->|Database| ST
     PM -.->|Database| GM
-    PM -.->|Database| CR
 
     SM -.->|S3 Upload| PE
     SM -.->|S3 Upload| GM
@@ -373,20 +399,17 @@ graph TB
     AM -->|Depends| UM
     GM -->|Depends| PE
     GM -->|Depends| ST
-    GM -->|Depends| CR
-    CR -->|Depends| UM
 ```
 
 ### Responsabilidades de Cada Módulo
 
 | Módulo | Responsabilidad | Endpoints Principales |
 |--------|----------------|---------------------|
-| **AuthModule** | Autenticación, JWT, login/register | `/api/auth/login`<br/>`/api/auth/register`<br/>`/api/auth/refresh` |
-| **UsersModule** | Gestión de usuarios, perfiles | `/api/users/:id`<br/>`/api/users/profile` |
-| **PetsModule** | Perfiles de mascotas, fotos | `/api/pets`<br/>`/api/pets/:id/photos` |
+| **AuthModule** | Autenticación, JWT, cookies, sesiones | `/api/auth/login`<br/>`/api/auth/register`<br/>`/api/auth/refresh`<br/>`/api/auth/logout`<br/>`/api/auth/sessions` |
+| **UsersModule** | Gestión de perfil de usuario | `/api/users/me` |
+| **PetsModule** | Perfiles de mascotas, fotos | `/api/pets`<br/>`/api/pets/:id` |
 | **StylesModule** | Catálogo de estilos AI | `/api/styles`<br/>`/api/styles/:id` |
-| **GenerationsModule** | Motor de generación AI | `/api/generations/image`<br/>`/api/generations/video` |
-| **CreditsModule** | Balance, transacciones, Shopify | `/api/credits/balance`<br/>`/api/credits/shopify-webhook` |
+| **GenerationsModule** | Motor de generación AI (gratis) | `/api/generations/image`<br/>`/api/generations/video` |
 | **StorageModule** | Upload/download S3 (global) | Usado internamente |
 | **PrismaModule** | Acceso a base de datos (global) | Usado internamente |
 
@@ -394,7 +417,7 @@ graph TB
 
 ## Sistema de Guards y Decoradores
 
-NestJS utiliza Guards para proteger endpoints. Este backend implementa un sistema robusto de autorización.
+NestJS utiliza Guards para proteger endpoints. Este backend implementa autenticación y autorización basada en roles.
 
 ### Jerarquía de Guards
 
@@ -402,17 +425,13 @@ NestJS utiliza Guards para proteger endpoints. Este backend implementa un sistem
 graph TD
     A[Request] --> B[JwtAuthGuard<br/>Global - Todos los endpoints]
     B -->|@Public| Z[✅ Bypass - Endpoint público]
-    B -->|Sin @Public| C[Validar JWT Token]
-    C -->|Token inválido| Z1[❌ 401 Unauthorized]
+    B -->|Sin @Public| C[Leer cookie accessToken]
+    C -->|Token inválido/ausente| Z1[❌ 401 Unauthorized]
     C -->|Token válido| D{RolesGuard<br/>¿Tiene @Roles?}
     D -->|No| W[✅ Continuar]
     D -->|Sí| E{Rol coincide?}
     E -->|No| Z2[❌ 403 Forbidden]
-    E -->|Sí| F{RequiredCreditsGuard<br/>¿Tiene @RequiredCredits?}
-    F -->|No| W
-    F -->|Sí| G{Balance suficiente?}
-    G -->|No| Z3[❌ 400 Bad Request]
-    G -->|Sí| W
+    E -->|Sí| W
     W --> H[Controller Handler]
 ```
 
@@ -430,19 +449,20 @@ async login(@Body() dto: LoginDto) {
 ```
 
 **Usado en:**
-- `/api/auth/login`
-- `/api/auth/register`
-- `/api/auth/refresh`
-- `/api/credits/shopify-webhook`
+- `POST /api/auth/login`
+- `POST /api/auth/register`
+- `POST /api/auth/refresh`
+- `POST /api/auth/logout`
+- `GET /api/styles` y sub-rutas
 
 #### 2. `@Roles(...roles)`
 Restringe acceso a roles específicos.
 
 ```typescript
-@Roles('admin', 'premium')
+@Roles('admin')
 @Delete('users/:id')
 async deleteUser(@Param('id') id: string) {
-  // Solo admin o premium pueden ejecutar
+  // Solo admin puede ejecutar
 }
 ```
 
@@ -451,45 +471,13 @@ async deleteUser(@Param('id') id: string) {
 - `premium` - Usuario con suscripción
 - `admin` - Administrador del sistema
 
-#### 3. `@RequiredCredits(amount)`
-Verifica balance mínimo de créditos.
-
-```typescript
-@RequiredCredits(10)
-@Post('generate')
-async generate(@Body() dto: CreateGenerationDto) {
-  // Requiere al menos 10 créditos
-}
-```
-
-#### 4. `@CurrentUser()`
+#### 3. `@CurrentUser()`
 Inyecta el usuario autenticado en el handler.
 
 ```typescript
-@Get('profile')
+@Get('me')
 async getProfile(@CurrentUser() user: User) {
   // user contiene: { sub: userId, email, role }
-}
-```
-
-### Ejemplo Completo
-
-```typescript
-@Controller('admin/generations')
-@ApiTags('admin')
-export class AdminGenerationsController {
-
-  // Solo admin, requiere 50 créditos
-  @Post('batch')
-  @Roles('admin')
-  @RequiredCredits(50)
-  async batchGenerate(
-    @CurrentUser() user: User,
-    @Body() dto: BatchGenerateDto
-  ) {
-    // user.role === 'admin' garantizado
-    // user tiene >= 50 créditos garantizado
-  }
 }
 ```
 
@@ -500,38 +488,25 @@ sequenceDiagram
     participant R as Request
     participant JG as JwtAuthGuard
     participant RG as RolesGuard
-    participant CG as RequiredCreditsGuard
     participant H as Handler
 
     R->>JG: ¿Tiene @Public()?
     alt Tiene @Public()
         JG->>H: ✅ Permitir
     else No tiene @Public()
-        JG->>JG: Validar JWT
-        alt Token inválido
+        JG->>JG: Leer cookie accessToken
+        alt Token inválido o ausente
             JG-->>R: ❌ 401
         else Token válido
             JG->>RG: ¿Tiene @Roles()?
             alt Sin @Roles()
-                RG->>CG: Continuar
+                RG->>H: ✅ Permitir
             else Con @Roles()
-                RG->>RG: Verificar rol
+                RG->>RG: Verificar rol del usuario
                 alt Rol no permitido
                     RG-->>R: ❌ 403
                 else Rol permitido
-                    RG->>CG: Continuar
-                end
-            end
-
-            CG->>CG: ¿Tiene @RequiredCredits()?
-            alt Sin @RequiredCredits()
-                CG->>H: ✅ Permitir
-            else Con @RequiredCredits()
-                CG->>CG: Verificar balance
-                alt Balance insuficiente
-                    CG-->>R: ❌ 400
-                else Balance suficiente
-                    CG->>H: ✅ Permitir
+                    RG->>H: ✅ Permitir
                 end
             end
         end
@@ -540,132 +515,103 @@ sequenceDiagram
 
 ---
 
-## Flujos de Casos de Uso Comunes
+## Tabla de Endpoints
 
-### Caso 1: Usuario Nuevo Genera su Primera Imagen
+Todos los endpoints están prefijados con `/api`.
 
-```mermaid
-sequenceDiagram
-    participant U as Usuario
-    participant A as Auth
-    participant P as Pets
-    participant S as Shopify
-    participant C as Credits
-    participant G as Generations
+### Auth (`/api/auth`)
 
-    U->>A: Registro
-    A-->>U: ✅ accessToken
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| `POST` | `/auth/register` | Público | Registrar nuevo usuario. Retorna cookies + user |
+| `POST` | `/auth/login` | Público | Login. Retorna cookies + user |
+| `POST` | `/auth/refresh` | Público | Rotar tokens usando cookie refreshToken |
+| `POST` | `/auth/logout` | Público | Revocar refresh token y limpiar cookies |
+| `GET` | `/auth/me` | JWT | Obtener usuario actual del JWT |
+| `GET` | `/auth/sessions` | JWT | Listar sesiones activas del usuario |
+| `POST` | `/auth/sessions/revoke/:tokenId` | JWT | Revocar sesión específica por ID |
+| `POST` | `/auth/sessions/revoke-all` | JWT | Revocar todas las sesiones excepto la actual |
 
-    U->>P: Crear perfil mascota
-    U->>P: Subir foto mascota
-    P-->>U: ✅ Pet creado
+### Users (`/api/users`)
 
-    Note over U,S: Usuario necesita comprar créditos
-    U->>S: Comprar paquete 100 créditos
-    S->>C: Webhook confirmación
-    C-->>U: ✅ Balance: 100 créditos
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| `GET` | `/users/me` | JWT | Obtener perfil completo del usuario actual |
+| `PATCH` | `/users/me` | JWT | Actualizar perfil del usuario actual |
 
-    U->>G: Generar imagen (costo: 10)
-    G->>C: Deducir 10 créditos
-    G-->>U: ✅ Generation pending
+### Pets (`/api/pets`)
 
-    Note over G: Proceso asíncrono AI
-    G->>G: AI procesa
-    G-->>U: 🔔 Generation completed
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| `POST` | `/pets` | JWT | Crear nuevo perfil de mascota |
+| `GET` | `/pets` | JWT | Listar todas las mascotas del usuario |
+| `GET` | `/pets/:id` | JWT | Obtener mascota por ID |
+| `PATCH` | `/pets/:id` | JWT | Actualizar mascota |
+| `DELETE` | `/pets/:id` | JWT | Eliminar mascota (soft delete) |
 
-    U->>G: Descargar imagen
-    G-->>U: ✅ URL S3
-```
+### Styles (`/api/styles`)
 
-### Caso 2: Generación Fallida con Reembolso
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| `GET` | `/styles` | Público | Listar todos los estilos activos |
+| `GET` | `/styles/categories` | Público | Listar categorías disponibles |
+| `GET` | `/styles/category/:category` | Público | Estilos por categoría |
+| `GET` | `/styles/:id` | Público | Obtener estilo por ID |
 
-```mermaid
-sequenceDiagram
-    participant U as Usuario
-    participant G as Generations
-    participant C as Credits
-    participant AI as Proveedor AI
-    participant DB as Database
+### Generations (`/api/generations`)
 
-    U->>G: POST /generations/image (costo: 15)
-    G->>C: Verificar balance
-    C-->>G: ✅ Balance: 50
-
-    G->>C: Deducir 15 créditos
-    C->>DB: Balance: 35
-    G->>DB: Status: pending
-    G-->>U: {id, status: "pending"}
-
-    G->>AI: Request generación
-    AI-->>G: ❌ Error 500 - Service unavailable
-
-    G->>DB: Status: failed
-    G->>C: Reembolsar 15 créditos
-    C->>DB: Balance: 50 (restaurado)
-    C->>DB: Transaction: refund
-
-    Note over U: Usuario recibe notificación<br/>de fallo + reembolso
-```
-
-### Caso 3: Admin Otorga Créditos Bonus
-
-```mermaid
-sequenceDiagram
-    participant A as Admin
-    participant API as Credits Controller
-    participant S as Credits Service
-    participant DB as Database
-    participant U as Usuario
-
-    A->>API: POST /api/credits/grant<br/>{userId, amount: 50, reason: "Bonus"}
-    Note over API: @Roles('admin')
-
-    API->>S: grantCredits(userId, amount)
-    S->>DB: Incrementar balance +50
-    S->>DB: Registrar transacción (type: bonus)
-    S-->>A: ✅ Balance actualizado
-
-    Note over U: Usuario ve +50 créditos<br/>en su balance
-```
+| Método | Ruta | Auth | Descripción |
+|--------|------|------|-------------|
+| `POST` | `/generations/image` | JWT | Crear generación de imagen (gratis) |
+| `POST` | `/generations/video` | JWT | Crear generación de video desde imagen completada |
+| `GET` | `/generations` | JWT | Listar generaciones del usuario (paginado) |
+| `GET` | `/generations/:id` | JWT | Obtener generación por ID |
+| `DELETE` | `/generations/:id` | JWT | Eliminar generación |
 
 ---
 
 ## Notas Importantes
 
-### Transacciones Atómicas
+### Modelo Gratuito e Ilimitado
 
-Todas las operaciones de créditos usan transacciones de Prisma para garantizar consistencia:
+Todas las generaciones de imágenes y videos son completamente **gratuitas e ilimitadas** para todos los usuarios. No existe sistema de créditos. El rol de usuario (`user`, `premium`, `admin`) se mantiene para diferenciación futura de funcionalidades.
 
-```typescript
-await prisma.$transaction([
-  prisma.userCredits.update({ ... }),
-  prisma.creditTransaction.create({ ... }),
-  prisma.generation.create({ ... }),
-]);
+### Seguridad de Sesiones
+
+- Máximo **5 sesiones activas** por usuario (las más antiguas se revocan automáticamente)
+- **Rotación de refresh tokens**: cada uso del refresh endpoint genera un nuevo par de tokens
+- **Detección de reuso**: si un refresh token revocado es utilizado, se revocan **todos** los tokens del usuario como medida de seguridad
+- **Limpieza automática**: tokens expirados y revocados se eliminan de la DB en cada login/refresh
+
+### Auto-generación de Prompts
+
+Si no se proporciona un `prompt` al crear una generación de imagen, el sistema lo genera automáticamente usando los datos de la mascota:
+
 ```
+prompt = "{species} {breed}"
+// Ejemplo: "dog labrador"
+```
+
+### Estado Actual de la Generación Asíncrona
+
+Actualmente la generación AI es **sincrónica** - el endpoint espera a que el proveedor AI responda antes de retornar. La implementación con **Bull Queue** para procesamiento asíncrono real es un TODO pendiente.
 
 ### Cascadas de Eliminación
 
 El esquema de base de datos usa cascadas para mantener integridad referencial:
 
-- Eliminar `User` → elimina `pets`, `credits`, `generations`
-- Eliminar `Pet` → elimina `photos`, `generations`
+- Eliminar `User` → elimina en cascada `pets`, `generations`, `refreshTokens`
+- Eliminar `Pet` → elimina en cascada `photos`, `generations`
 - Eliminar `Style` → **NO** elimina generaciones (usa `SetNull`)
 
-### Manejo Asíncrono
+### Seguridad General
 
-Las generaciones AI son procesos asíncronos:
-- El endpoint retorna inmediatamente con `status: "pending"`
-- El proceso AI corre en background
-- Cliente debe hacer polling o usar webhooks para conocer el resultado
-
-### Seguridad
-
-- Tokens JWT tienen expiración configurable
-- Passwords hasheados con bcrypt
-- Validación estricta de DTOs
-- CORS configurado para frontend específico
-- Webhooks de Shopify validan signature
+- Tokens JWT en cookies httpOnly (protección XSS)
+- `sameSite: 'lax'` (protección CSRF, compatible con OAuth)
+- `secure: true` solo en producción (requiere HTTPS)
+- Passwords hasheados con bcrypt (salt rounds: 12)
+- Validación estricta de DTOs con whitelist
+- CORS configurado para `FRONTEND_URL` específico
 
 ---
 
@@ -673,10 +619,13 @@ Las generaciones AI son procesos asíncronos:
 
 - [main.ts](src/main.ts) - Configuración global de la aplicación
 - [app.module.ts](src/app.module.ts) - Módulo raíz y configuración de guards
+- [auth.controller.ts](src/auth/auth.controller.ts) - Endpoints de autenticación y sesiones
+- [auth.service.ts](src/auth/auth.service.ts) - Lógica de tokens, rotación, sesiones
 - [jwt-auth.guard.ts](src/common/guards/jwt-auth.guard.ts) - Guard de autenticación
 - [logging.interceptor.ts](src/common/interceptors/logging.interceptor.ts) - Logging de requests
 - [transform.interceptor.ts](src/common/interceptors/transform.interceptor.ts) - Formato de respuestas
 - [generations.controller.ts](src/generations/generations.controller.ts) - Endpoints de generación
+- [generations.service.ts](src/generations/generations.service.ts) - Lógica de generación AI
 
 ---
 

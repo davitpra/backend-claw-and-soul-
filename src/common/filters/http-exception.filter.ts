@@ -8,6 +8,7 @@ import {
 import { Request, Response } from 'express';
 
 //Standardized HTTP error responses
+//Captura y formatea errores consistentemente
 
 @Catch(HttpException) // Catch all HttpExceptions
 export class HttpExceptionFilter implements ExceptionFilter {

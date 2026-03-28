@@ -11,6 +11,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     super();
   }
 
+  // Lee el token JWT desde la cookie httpOnly accessToken
   canActivate(context: ExecutionContext) {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),

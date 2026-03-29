@@ -82,6 +82,29 @@ export class PetsService {
     });
   }
 
+  async deletePhoto(
+    petId: string,
+    photoId: string,
+    userId: string,
+  ): Promise<string> {
+    const pet = await this.findOne(petId);
+    if (pet.userId !== userId) {
+      throw new ForbiddenException('You do not own this pet');
+    }
+
+    const photo = await this.prisma.petPhoto.findUnique({
+      where: { id: photoId },
+    });
+
+    if (!photo || photo.petId !== petId) {
+      throw new NotFoundException('Photo not found');
+    }
+
+    await this.prisma.petPhoto.delete({ where: { id: photoId } });
+
+    return photo.photoStorageKey;
+  }
+
   async addPhoto(
     petId: string,
     userId: string,

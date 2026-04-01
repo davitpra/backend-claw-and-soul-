@@ -4,6 +4,8 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { PetsService } from '../pets/pets.service';
 import { StylesService } from '../styles/styles.service';
@@ -13,6 +15,7 @@ import {
   getPaginationParams,
   createPaginatedResult,
 } from '../common/utils/pagination.util';
+import { QUEUE_NAMES, JOB_NAMES } from './constants/queues.constants';
 
 @Injectable()
 export class GenerationsService {
@@ -22,6 +25,8 @@ export class GenerationsService {
     private prisma: PrismaService,
     private petsService: PetsService,
     private stylesService: StylesService,
+    @InjectQueue(QUEUE_NAMES.IMAGE_GENERATION) private imageQueue: Queue,
+    @InjectQueue(QUEUE_NAMES.VIDEO_GENERATION) private videoQueue: Queue,
   ) {}
 
   async createImageGeneration(
@@ -62,8 +67,7 @@ export class GenerationsService {
 
     this.logger.log(`Image generation created: ${generation.id}`);
 
-    // TODO: Enqueue job in Bull Queue
-    // await this.imageQueue.add('generate', { generationId: generation.id });
+    await this.imageQueue.add(JOB_NAMES.GENERATE, { generationId: generation.id });
 
     return generation;
   }
@@ -124,8 +128,7 @@ export class GenerationsService {
 
     this.logger.log(`Video generation created: ${generation.id}`);
 
-    // TODO: Enqueue job in Bull Queue
-    // await this.videoQueue.add('generate', { generationId: generation.id });
+    await this.videoQueue.add(JOB_NAMES.GENERATE, { generationId: generation.id });
 
     return generation;
   }

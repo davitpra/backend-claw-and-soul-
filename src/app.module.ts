@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
+import { BullModule } from '@nestjs/bullmq';
 
 // Config imports
 import databaseConfig from './config/database.config';
@@ -31,6 +32,19 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
     // Schedule module for cron jobs
     ScheduleModule.forRoot(),
+
+    // BullMQ - conexión global a Redis
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        connection: {
+          host: configService.get<string>('redis.host'),
+          port: configService.get<number>('redis.port'),
+          password: configService.get<string>('redis.password'),
+          db: configService.get<number>('redis.db'),
+        },
+      }),
+    }),
 
     // Core modules
     PrismaModule,

@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateFormatDto } from './dto/create-format.dto';
+import { UpdateFormatDto } from './dto/update-format.dto';
 
 @Injectable()
 export class FormatsService {
@@ -24,5 +26,22 @@ export class FormatsService {
       throw new NotFoundException(`Format ${id} not found`);
     }
     return format;
+  }
+
+  async create(dto: CreateFormatDto) {
+    return this.prisma.format.create({ data: dto });
+  }
+
+  async update(id: string, dto: UpdateFormatDto) {
+    await this.findOne(id);
+    return this.prisma.format.update({ where: { id }, data: dto });
+  }
+
+  async softDelete(id: string) {
+    await this.findOne(id);
+    return this.prisma.format.update({
+      where: { id },
+      data: { isActive: false },
+    });
   }
 }

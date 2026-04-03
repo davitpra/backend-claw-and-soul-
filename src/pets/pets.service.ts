@@ -105,6 +105,53 @@ export class PetsService {
     return photo.photoStorageKey;
   }
 
+  async getPhotos(petId: string, userId: string) {
+    const pet = await this.findOne(petId);
+    if (pet.userId !== userId) {
+      throw new ForbiddenException('You do not own this pet');
+    }
+
+    return this.prisma.petPhoto.findMany({
+      where: { petId },
+      orderBy: { orderIndex: 'asc' },
+    });
+  }
+
+  async updatePhoto(
+    petId: string,
+    photoId: string,
+    userId: string,
+    data: { orderIndex?: number; isPrimary?: boolean },
+  ) {
+    const pet = await this.findOne(petId);
+    if (pet.userId !== userId) {
+      throw new ForbiddenException('You do not own this pet');
+    }
+
+    const photo = await this.prisma.petPhoto.findUnique({
+      where: { id: photoId },
+    });
+
+    if (!photo || photo.petId !== petId) {
+      throw new NotFoundException('Photo not found');
+    }
+
+    if (data.isPrimary) {
+      await this.prisma.petPhoto.updateMany({
+        where: { petId },
+        data: { isPrimary: false },
+      });
+    }
+
+    return this.prisma.petPhoto.update({
+      where: { id: photoId },
+      data: {
+        ...(data.orderIndex !== undefined && { orderIndex: data.orderIndex }),
+        ...(data.isPrimary !== undefined && { isPrimary: data.isPrimary }),
+      },
+    });
+  }
+
   async addPhoto(
     petId: string,
     userId: string,

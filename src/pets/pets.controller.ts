@@ -89,6 +89,32 @@ export class PetsController {
     return this.petsService.remove(id, user.sub);
   }
 
+  @Get(':id/photos')
+  @ApiOperation({ summary: 'List photos of a pet' })
+  @ApiResponse({ status: 200, description: 'Photos retrieved successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Pet not found' })
+  getPhotos(@Param('id') petId: string, @CurrentUser() user: AuthUser) {
+    return this.petsService.getPhotos(petId, user.sub);
+  }
+
+  @Patch(':id/photos/:photoId')
+  @ApiOperation({ summary: 'Update photo order or primary status' })
+  @ApiResponse({ status: 200, description: 'Photo updated successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Photo not found' })
+  updatePhoto(
+    @Param('id') petId: string,
+    @Param('photoId') photoId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() body: { order_index?: number; is_primary?: boolean },
+  ) {
+    return this.petsService.updatePhoto(petId, photoId, user.sub, {
+      orderIndex: body.order_index,
+      isPrimary: body.is_primary,
+    });
+  }
+
   @Post(':id/photos')
   @ApiOperation({ summary: 'Upload a photo for a pet' })
   @ApiConsumes('multipart/form-data')

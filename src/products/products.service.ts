@@ -4,11 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateProductReferenceDto } from './dto/create-product-reference.dto';
-import { UpdateProductReferenceDto } from './dto/update-product-reference.dto';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 
 @Injectable()
-export class ProductReferencesService {
+export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
   findAll() {
@@ -24,26 +24,26 @@ export class ProductReferencesService {
     });
 
     if (!product) {
-      throw new NotFoundException('Product reference not found');
+      throw new NotFoundException('Product not found');
     }
 
     return product;
   }
 
-  async create(dto: CreateProductReferenceDto) {
+  async create(dto: CreateProductDto) {
     try {
       return await this.prisma.productReference.create({ data: dto });
     } catch (error) {
       if (error.code === 'P2002') {
         throw new ConflictException(
-          'A product reference with this Shopify product ID already exists',
+          'A product with this Shopify product ID already exists',
         );
       }
       throw error;
     }
   }
 
-  async update(id: string, dto: UpdateProductReferenceDto) {
+  async update(id: string, dto: UpdateProductDto) {
     await this.findOne(id);
 
     try {
@@ -54,7 +54,7 @@ export class ProductReferencesService {
     } catch (error) {
       if (error.code === 'P2002') {
         throw new ConflictException(
-          'A product reference with this Shopify product ID already exists',
+          'A product with this Shopify product ID already exists',
         );
       }
       throw error;

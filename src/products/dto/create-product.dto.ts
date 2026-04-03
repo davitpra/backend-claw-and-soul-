@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, MaxLength } from 'class-validator';
 
-export class CreateProductReferenceDto {
+export class CreateProductDto {
   @ApiProperty({ example: 'gid://shopify/Product/123456789' })
   @IsString()
   @MaxLength(255)

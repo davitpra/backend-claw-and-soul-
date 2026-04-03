@@ -18,7 +18,7 @@ import { StylesModule } from './styles/styles.module';
 import { GenerationsModule } from './generations/generations.module';
 import { StorageModule } from './storage/storage.module';
 import { FormatsModule } from './formats/formats.module';
-import { ProductReferencesModule } from './product-references/product-references.module';
+import { ProductsModule } from './products/products.module';
 import { StyleCompatModule } from './style-compat/style-compat.module';
 
 // Guards
@@ -58,7 +58,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     GenerationsModule,
     StorageModule,
     FormatsModule,
-    ProductReferencesModule,
+    ProductsModule,
     StyleCompatModule,
   ],
   providers: [

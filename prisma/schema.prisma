@@ -8,7 +8,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 2.1 Users
+// ============================================
+// AUTHENTICATION & USERS
+// ============================================
+
 model User {
   id            String    @id @default(uuid())
   email         String    @unique
@@ -32,7 +35,26 @@ model User {
   @@map("users")
 }
 
-// 2.4 Pets
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  isRevoked Boolean  @default(false) @map("is_revoked")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// PETS & PET PHOTOS
+// ============================================
+
 model Pet {
   id          String   @id @default(uuid())
   userId      String   @map("user_id")
@@ -55,7 +77,6 @@ model Pet {
   @@map("pets")
 }
 
-// 2.5 PetPhotos
 model PetPhoto {
   id              String   @id @default(uuid())
   petId           String   @map("pet_id")
@@ -74,7 +95,10 @@ model PetPhoto {
   @@map("pet_photos")
 }
 
-// 2.6 Styles
+// ============================================
+// STYLES & STYLE IMAGES
+// ============================================
+
 model Style {
   id          String   @id @default(uuid())
   name        String   @unique
@@ -89,7 +113,9 @@ model Style {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
-  generations Generation[]
+  generations  Generation[]
+  images       StyleImage[]
+  compatMatrix StyleFormatProductCompat[]
 
   @@index([category])
   @@index([isActive])
@@ -98,13 +124,97 @@ model Style {
   @@map("styles")
 }
 
-// 2.7 Generations
+model StyleImage {
+  id         String   @id @default(uuid())
+  styleId    String   @map("style_id")
+  imageUrl   String   @map("image_url")
+  storageKey String   @map("storage_key")
+  caption    String?
+  orderIndex Int      @map("order_index")
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@index([styleId])
+  @@index([styleId, orderIndex])
+  @@map("style_images")
+}
+
+// ============================================
+// FORMATS & PRODUCT REFERENCES
+// ============================================
+
+model Format {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  displayName String   @map("display_name")
+  aspectRatio String   @map("aspect_ratio")
+  width       Int
+  height      Int
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  generations  Generation[]
+  compatMatrix StyleFormatProductCompat[]
+
+  @@index([isActive])
+  @@map("formats")
+}
+
+model ProductReference {
+  id               String   @id @default(uuid())
+  shopifyProductId String   @unique @map("shopify_product_id")
+  name             String
+  displayName      String   @map("display_name")
+  description      String?
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  generations  Generation[]
+  compatMatrix StyleFormatProductCompat[]
+
+  @@index([isActive])
+  @@map("product_references")
+}
+
+// ============================================
+// COMPATIBILITY MATRIX
+// ============================================
+
+model StyleFormatProductCompat {
+  id           String   @id @default(uuid())
+  styleId      String   @map("style_id")
+  formatId     String   @map("format_id")
+  productRefId String   @map("product_ref_id")
+  constraints  Json?
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  style      Style            @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  format     Format           @relation(fields: [formatId], references: [id], onDelete: Cascade)
+  productRef ProductReference @relation(fields: [productRefId], references: [id], onDelete: Cascade)
+
+  @@unique([styleId, formatId, productRefId])
+  @@index([styleId])
+  @@index([formatId])
+  @@map("style_format_product_compat")
+}
+
+// ============================================
+// GENERATIONS
+// ============================================
+
 model Generation {
   id                    String    @id @default(uuid())
   userId                String    @map("user_id")
   petId                 String    @map("pet_id")
   petPhotoId            String?   @map("pet_photo_id")
   styleId               String    @map("style_id")
+  formatId              String?   @map("format_id")
+  productRefId          String?   @map("product_ref_id")
   type                  String // Enum: image, video
   status                String    @default("pending") // Enum: pending, processing, completed, failed
   prompt                String
@@ -122,10 +232,12 @@ model Generation {
   completedAt           DateTime? @map("completed_at")
   updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  pet      Pet       @relation(fields: [petId], references: [id], onDelete: Cascade)
-  petPhoto PetPhoto? @relation(fields: [petPhotoId], references: [id], onDelete: SetNull)
-  style    Style     @relation(fields: [styleId], references: [id], onDelete: Restrict)
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pet        Pet               @relation(fields: [petId], references: [id], onDelete: Cascade)
+  petPhoto   PetPhoto?         @relation(fields: [petPhotoId], references: [id], onDelete: SetNull)
+  style      Style             @relation(fields: [styleId], references: [id], onDelete: Restrict)
+  format     Format?           @relation(fields: [formatId], references: [id], onDelete: SetNull)
+  productRef ProductReference? @relation(fields: [productRefId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([petId])
@@ -138,7 +250,10 @@ model Generation {
   @@map("generations")
 }
 
-// 2.10 AuditLogs
+// ============================================
+// AUDIT LOGS
+// ============================================
+
 model AuditLog {
   id         String   @id @default(uuid())
   userId     String?  @map("user_id")
@@ -156,21 +271,4 @@ model AuditLog {
   @@index([action])
   @@index([createdAt(sort: Desc)])
   @@map("audit_logs")
-}
-
-// 2.11 RefreshTokens
-model RefreshToken {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  token     String   @unique
-  expiresAt DateTime @map("expires_at")
-  isRevoked Boolean  @default(false) @map("is_revoked")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([token])
-  @@index([expiresAt])
-  @@map("refresh_tokens")
 }

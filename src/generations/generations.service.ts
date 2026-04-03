@@ -49,6 +49,8 @@ export class GenerationsService {
         petId: createDto.petId,
         petPhotoId: createDto.petPhotoId,
         styleId: createDto.styleId,
+        formatId: createDto.formatId,
+        productRefId: createDto.productRefId,
         type: 'image',
         status: 'pending',
         prompt: createDto.prompt || `${pet.species} ${pet.breed || ''}`,

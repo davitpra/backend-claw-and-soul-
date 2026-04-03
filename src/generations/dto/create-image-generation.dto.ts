@@ -9,6 +9,7 @@ import {
   Max,
 } from 'class-validator';
 
+
 export class CreateImageGenerationDto {
   @ApiProperty({ description: 'Pet ID' })
   @IsUUID()
@@ -52,4 +53,14 @@ export class CreateImageGenerationDto {
   @Min(512)
   @Max(2048)
   height?: number;
+
+  @ApiProperty({ description: 'Format ID (optional)' })
+  @IsOptional()
+  @IsUUID()
+  formatId?: string;
+
+  @ApiProperty({ description: 'Product reference ID (optional)' })
+  @IsOptional()
+  @IsUUID()
+  productRefId?: string;
 }

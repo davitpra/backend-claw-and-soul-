@@ -9,12 +9,18 @@ export class StylesService {
     return this.prisma.style.findMany({
       where: { isActive: true },
       orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
+      include: {
+        images: { orderBy: { orderIndex: 'asc' } },
+      },
     });
   }
 
   async findOne(id: string) {
     const style = await this.prisma.style.findUnique({
       where: { id },
+      include: {
+        images: { orderBy: { orderIndex: 'asc' } },
+      },
     });
 
     if (!style) {

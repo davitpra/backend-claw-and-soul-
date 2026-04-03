@@ -17,6 +17,9 @@ import { PetsModule } from './pets/pets.module';
 import { StylesModule } from './styles/styles.module';
 import { GenerationsModule } from './generations/generations.module';
 import { StorageModule } from './storage/storage.module';
+import { FormatsModule } from './formats/formats.module';
+import { ProductReferencesModule } from './product-references/product-references.module';
+import { StyleCompatModule } from './style-compat/style-compat.module';
 
 // Guards
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -54,6 +57,9 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     StylesModule,
     GenerationsModule,
     StorageModule,
+    FormatsModule,
+    ProductReferencesModule,
+    StyleCompatModule,
   ],
   providers: [
     {

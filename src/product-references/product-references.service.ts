@@ -1,17 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateProductReferenceDto } from './dto/create-product-reference.dto';
+import { UpdateProductReferenceDto } from './dto/update-product-reference.dto';
 
 @Injectable()
 export class ProductReferencesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll() {
-    return this.prisma.productReference.findMany({
-      orderBy: { name: 'asc' },
-    });
-  }
-
-  async findActive() {
+  findAll() {
     return this.prisma.productReference.findMany({
       where: { isActive: true },
       orderBy: { name: 'asc' },
@@ -19,12 +19,53 @@ export class ProductReferencesService {
   }
 
   async findOne(id: string) {
-    const productRef = await this.prisma.productReference.findUnique({
+    const product = await this.prisma.productReference.findUnique({
       where: { id },
     });
-    if (!productRef) {
-      throw new NotFoundException(`ProductReference ${id} not found`);
+
+    if (!product) {
+      throw new NotFoundException('Product reference not found');
     }
-    return productRef;
+
+    return product;
+  }
+
+  async create(dto: CreateProductReferenceDto) {
+    try {
+      return await this.prisma.productReference.create({ data: dto });
+    } catch (error) {
+      if (error.code === 'P2002') {
+        throw new ConflictException(
+          'A product reference with this Shopify product ID already exists',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async update(id: string, dto: UpdateProductReferenceDto) {
+    await this.findOne(id);
+
+    try {
+      return await this.prisma.productReference.update({
+        where: { id },
+        data: dto,
+      });
+    } catch (error) {
+      if (error.code === 'P2002') {
+        throw new ConflictException(
+          'A product reference with this Shopify product ID already exists',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async softDelete(id: string) {
+    await this.findOne(id);
+    return this.prisma.productReference.update({
+      where: { id },
+      data: { isActive: false },
+    });
   }
 }

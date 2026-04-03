@@ -5,9 +5,13 @@ import { PrismaService } from '../prisma/prisma.service';
 export class StylesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll() {
+  async findAll(category?: string, isPremium?: boolean) {
+    const where: any = { isActive: true };
+    if (category) where.category = category;
+    if (isPremium !== undefined) where.isPremium = isPremium;
+
     return this.prisma.style.findMany({
-      where: { isActive: true },
+      where,
       orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
       include: {
         images: { orderBy: { orderIndex: 'asc' } },
@@ -34,6 +38,19 @@ export class StylesService {
     return this.prisma.style.findMany({
       where: { category, isActive: true },
       orderBy: { sortOrder: 'asc' },
+    });
+  }
+
+  async getStyleImages(styleId: string, isPrimary?: boolean) {
+    const style = await this.prisma.style.findUnique({ where: { id: styleId } });
+    if (!style) throw new NotFoundException('Style not found');
+
+    const where: any = { styleId };
+    if (isPrimary !== undefined) where.isPrimary = isPrimary;
+
+    return this.prisma.styleImage.findMany({
+      where,
+      orderBy: { orderIndex: 'asc' },
     });
   }
 

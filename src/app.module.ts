@@ -20,6 +20,7 @@ import { StorageModule } from './storage/storage.module';
 import { FormatsModule } from './formats/formats.module';
 import { ProductsModule } from './products/products.module';
 import { StyleCompatModule } from './style-compat/style-compat.module';
+import { CompatModule } from './compat/compat.module';
 
 // Guards
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -60,6 +61,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     FormatsModule,
     ProductsModule,
     StyleCompatModule,
+    CompatModule,
   ],
   providers: [
     {

@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PetsService } from '../pets/pets.service';
 import { StylesService } from '../styles/styles.service';
 import { CreateImageGenerationDto } from './dto/create-image-generation.dto';
-import { CreateVideoGenerationDto } from './dto/create-video-generation.dto';
+import { UpdateGenerationFlagsDto } from './dto/update-generation-flags.dto';
 import {
   getPaginationParams,
   createPaginatedResult,
@@ -26,7 +26,6 @@ export class GenerationsService {
     private petsService: PetsService,
     private stylesService: StylesService,
     @InjectQueue(QUEUE_NAMES.IMAGE_GENERATION) private imageQueue: Queue,
-    @InjectQueue(QUEUE_NAMES.VIDEO_GENERATION) private videoQueue: Queue,
   ) {}
 
   async createImageGeneration(
@@ -74,79 +73,18 @@ export class GenerationsService {
     return generation;
   }
 
-  async createVideoGeneration(
-    userId: string,
-    createDto: CreateVideoGenerationDto,
-  ) {
-    // Validate source generation
-    const sourceGeneration = await this.prisma.generation.findUnique({
-      where: { id: createDto.sourceGenerationId },
-      include: { pet: true, style: true },
-    });
-
-    if (!sourceGeneration) {
-      throw new NotFoundException('Source generation not found');
-    }
-
-    if (sourceGeneration.userId !== userId) {
-      throw new BadRequestException(
-        'Source generation does not belong to user',
-      );
-    }
-
-    if (sourceGeneration.type !== 'image') {
-      throw new BadRequestException('Source must be an image generation');
-    }
-
-    if (sourceGeneration.status !== 'completed') {
-      throw new BadRequestException('Source generation must be completed');
-    }
-
-    // Create generation record (no credit checks - all generations are free)
-    const duration = createDto.duration || 3;
-
-    const generation = await this.prisma.generation.create({
-      data: {
-        userId,
-        petId: sourceGeneration.petId,
-        petPhotoId: sourceGeneration.petPhotoId,
-        styleId: sourceGeneration.styleId,
-        type: 'video',
-        status: 'pending',
-        prompt: sourceGeneration.prompt,
-        provider: createDto.provider || 'runway',
-        metadata: {
-          sourceGenerationId: createDto.sourceGenerationId,
-          sourceImageUrl: sourceGeneration.resultUrl,
-          duration,
-          motion: createDto.motion || 'medium',
-        },
-      },
-      include: {
-        pet: true,
-        style: true,
-      },
-    });
-
-    this.logger.log(`Video generation created: ${generation.id}`);
-
-    await this.videoQueue.add(JOB_NAMES.GENERATE, { generationId: generation.id });
-
-    return generation;
-  }
-
   async findUserGenerations(
     userId: string,
     page: number = 1,
     limit: number = 20,
-    type?: string,
+    status?: string,
+    petId?: string,
   ) {
     const { skip, take } = getPaginationParams(page, limit);
 
     const where: any = { userId };
-    if (type) {
-      where.type = type;
-    }
+    if (status) where.status = status;
+    if (petId) where.petId = petId;
 
     const [generations, total] = await Promise.all([
       this.prisma.generation.findMany({
@@ -196,6 +134,46 @@ export class GenerationsService {
         status,
         ...data,
         ...(status === 'completed' && { completedAt: new Date() }),
+      },
+    });
+  }
+
+  async getGenerationStatus(id: string, userId: string) {
+    const generation = await this.prisma.generation.findUnique({
+      where: { id },
+      select: { status: true, userId: true, metadata: true },
+    });
+
+    if (!generation) {
+      throw new NotFoundException('Generation not found');
+    }
+
+    if (generation.userId !== userId) {
+      throw new BadRequestException('Access denied');
+    }
+
+    return {
+      status: generation.status,
+      progress: (generation.metadata as any)?.progress ?? null,
+    };
+  }
+
+  async updateGenerationFlags(
+    id: string,
+    userId: string,
+    updateDto: UpdateGenerationFlagsDto,
+  ) {
+    const generation = await this.findOne(id, userId);
+
+    if (generation.userId !== userId) {
+      throw new BadRequestException('Access denied');
+    }
+
+    return this.prisma.generation.update({
+      where: { id },
+      data: {
+        ...(updateDto.isPublic !== undefined && { isPublic: updateDto.isPublic }),
+        ...(updateDto.isFavorite !== undefined && { isFavorite: updateDto.isFavorite }),
       },
     });
   }

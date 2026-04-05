@@ -1,32 +1,33 @@
 # Generations Module
 
-Core engine for AI-powered image and video generation. All generations are free and unlimited for all users.
+Core engine for AI-powered image generation. All generations are free and unlimited for all users.
 
 ## Files Structure
 
 - `generations/generations.service.ts`: Orchestration logic — pet/style validation, record creation, and queue dispatch.
 - `generations/generations.controller.ts`: API endpoints for creating and querying generation jobs.
 - `generations/processors/image-generation.processor.ts`: BullMQ worker that processes image jobs.
-- `generations/processors/video-generation.processor.ts`: BullMQ worker that processes video jobs.
+- `generations/processors/video-generation.processor.ts`: BullMQ worker that processes video jobs (reserved for future use).
 - `generations/constants/queues.constants.ts`: Queue and job name constants.
 - `generations/dto/create-image-generation.dto.ts`: DTO for image generation.
-- `generations/dto/create-video-generation.dto.ts`: DTO for video generation.
+- `generations/dto/update-generation-flags.dto.ts`: DTO for updating `isPublic` / `isFavorite` flags.
 
 ## Endpoints
 
 All endpoints require JWT authentication.
 
-| Method   | Endpoint                   | Query Params                    | Description                                            |
-| :------- | :------------------------- | :------------------------------ | :----------------------------------------------------- |
-| `POST`   | `/api/generations/image`   | —                               | Create an image generation job.                        |
-| `POST`   | `/api/generations/video`   | —                               | Create a video generation job (requires source image). |
-| `GET`    | `/api/generations`         | `?page&limit&type=image\|video` | List the authenticated user's generations (paginated). |
-| `GET`    | `/api/generations/:id`     | —                               | Get status and details of a specific generation.       |
-| `DELETE` | `/api/generations/:id`     | —                               | Hard delete a generation from the user's history.      |
+| Method   | Endpoint                          | Query Params                                  | Description                                      |
+| :------- | :-------------------------------- | :-------------------------------------------- | :----------------------------------------------- |
+| `POST`   | `/api/generations`                | —                                             | Create an image generation job.                  |
+| `GET`    | `/api/generations`                | `?page&limit&status=pending\|...&pet_id=uuid` | List the authenticated user's generations (paginated). |
+| `GET`    | `/api/generations/:id`            | —                                             | Get full details of a specific generation.       |
+| `GET`    | `/api/generations/:id/status`     | —                                             | Lightweight polling — returns `{ status, progress? }`. |
+| `PATCH`  | `/api/generations/:id`            | —                                             | Update `isPublic` / `isFavorite` flags.          |
+| `DELETE` | `/api/generations/:id`            | —                                             | Hard delete a generation from the user's history. |
 
 ## DTOs
 
-### POST `/api/generations/image` — CreateImageGenerationDto
+### POST `/api/generations` — CreateImageGenerationDto
 
 | Field            | Type    | Required | Description                                        |
 | :--------------- | :------ | :------- | :------------------------------------------------- |
@@ -41,14 +42,12 @@ All endpoints require JWT authentication.
 | `formatId`       | UUID    | No       | Format reference for compat tracking.              |
 | `productRefId`   | UUID    | No       | Product reference for compat tracking.             |
 
-### POST `/api/generations/video` — CreateVideoGenerationDto
+### PATCH `/api/generations/:id` — UpdateGenerationFlagsDto
 
-| Field               | Type    | Required | Description                                           |
-| :------------------ | :------ | :------- | :---------------------------------------------------- |
-| `sourceGenerationId`| UUID    | Yes      | ID of a **completed image** generation to animate.    |
-| `duration`          | int     | No       | Video duration in seconds (3–10, default 3).          |
-| `motion`            | string  | No       | Motion intensity: `low`, `medium` (default), `high`.  |
-| `provider`          | string  | No       | AI provider (default `runway`).                       |
+| Field        | Type    | Required | Description                        |
+| :----------- | :------ | :------- | :--------------------------------- |
+| `isPublic`   | boolean | No       | Make the generation publicly visible. |
+| `isFavorite` | boolean | No       | Mark the generation as a favorite. |
 
 ## Generation Statuses
 
@@ -58,8 +57,9 @@ All endpoints require JWT authentication.
 
 - **Free & Unlimited**: No credit checks. All users generate without restrictions.
 - **Pet Ownership Validation**: Users can only generate art for their own pets.
-- **Queue-Based Processing**: Jobs are dispatched to BullMQ queues (`image-generation`, `video-generation`) immediately after the generation record is created.
-- **Video from Image**: Video generation requires a `sourceGenerationId` pointing to a completed image generation. Inherits pet, style, and prompt from the source.
-- **Pagination**: `GET /api/generations` uses page/limit params (default: page=1, limit=20) and supports filtering by `type`.
-- **Public Flag**: `findOne` respects `isPublic` on generation — non-owners can only access public generations.
+- **Queue-Based Processing**: Jobs are dispatched to the `image-generation` BullMQ queue immediately after the generation record is created.
+- **Pagination**: `GET /api/generations` uses page/limit params (default: page=1, limit=20) and supports filtering by `status` and `pet_id`.
+- **Lightweight Polling**: `GET /api/generations/:id/status` returns only `{ status, progress? }` to minimize payload on frequent polls.
+- **Flag Updates**: `PATCH /api/generations/:id` allows toggling `isPublic` and `isFavorite` independently.
+- **Public Flag**: `findOne` respects `isPublic` — non-owners can only access public generations.
 - **Hard Delete**: `DELETE` permanently removes the record from the database.

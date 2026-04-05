@@ -1,21 +1,26 @@
-# 💾 Storage Module
+# Storage Module
 
-Internal service for managing file persistence, specifically designed for handling pet photos and generated assets.
+Internal service for managing file persistence using **Cloudinary**. Handles uploads and deletions for pet photos and generated assets. Exposed as a global NestJS module so any other module can inject `StorageService`.
 
-## 📁 Files Structure
+## Files Structure
 
-- `storage/storage.service.ts`: Core service for interacting with cloud storage providers.
+- `storage/storage.service.ts`: Core service wrapping the Cloudinary SDK v2.
+- `storage/storage.module.ts`: Global module — no need to import in other modules.
 
-## 🛠️ Features
+## API (StorageService methods)
 
-- **Cloud Integration**: Full **AWS S3** support using the latest **AWS SDK v3**.
-- **Smart Uploads**: Automatic detecting of content types for correct metadata storage.
-- **Life Cycle Management**: Methods for both secure file upload and permanent deletion.
-- **Resource Access**: Dynamic generation of public URLs for easy content delivery.
-- **Asset Isolation**: Logic for organizing files by user and asset type.
+This module has no HTTP endpoints. It is consumed internally by other modules (e.g. `PetsController`, `StylesService`).
 
-## ⚙️ Technical Details
+| Method         | Signature                                              | Returns          | Description                                                   |
+| :------------- | :----------------------------------------------------- | :--------------- | :------------------------------------------------------------ |
+| `upload`       | `(key, buffer, contentType) => Promise<string>`        | `secure_url`     | Uploads a buffer to Cloudinary using `key` as `public_id`.    |
+| `delete`       | `(key) => Promise<void>`                               | —                | Destroys a resource in Cloudinary by `public_id`.             |
+| `getPublicUrl` | `(key) => string`                                      | URL string       | Builds a Cloudinary delivery URL from a `public_id`.          |
 
-- **Provider**: AWS S3 (Scalable Object Storage).
-- **Security**: Environment-based configuration for credentials and bucket names.
-- **Efficiency**: Stream-based uploads for handling large assets without high memory overhead.
+## Features
+
+- **Provider**: Cloudinary (SDK v2 — `cloudinary` package).
+- **Resource Type Detection**: Automatically uses `resource_type: 'video'` for video content types and `'image'` for everything else.
+- **Key as public_id**: The `key` parameter (e.g. `pets/{userId}/{petId}/{uuid}`) becomes the Cloudinary `public_id`, enabling structured folder organization.
+- **Overwrite**: Uploads use `overwrite: true` — re-uploading the same key replaces the file.
+- **Configuration**: Reads `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` from environment variables.

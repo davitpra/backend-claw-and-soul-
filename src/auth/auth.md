@@ -1,27 +1,36 @@
-# 🔐 Auth Module
+# Auth Module
 
-Implements the complete authentication flow as defined in the project flowchart (sections 1.1-1.3).
+Implements the complete authentication flow with JWT tokens stored in httpOnly cookies.
 
-## 📁 Files Structure
+## Files Structure
 
-- `auth/auth.service.ts`: Core logic for authentication and token management.
+- `auth/auth.service.ts`: Core logic for authentication, token management, and session control.
 - `auth/auth.controller.ts`: API endpoints exposure.
-- `auth/strategies/jwt.strategy.ts`: JWT validation strategy.
+- `auth/auth-cleanup.service.ts`: Scheduled cleanup of expired/revoked tokens.
+- `auth/strategies/jwt.strategy.ts`: JWT validation strategy (reads token from httpOnly cookie).
+- `auth/dto/`: DTOs for register, login, and refresh token.
 
-## 🚀 Endpoints
+## Endpoints
 
-| Method | Endpoint             | Description                                                               |
-| :----- | :------------------- | :------------------------------------------------------------------------ |
-| `POST` | `/api/auth/register` | User registration with automatic credit initialization (10 free credits). |
-| `POST` | `/api/auth/login`    | User login returning JWT tokens (Access & Refresh).                       |
-| `POST` | `/api/auth/refresh`  | Refresh the access token using a valid refresh token.                     |
-| `POST` | `/api/auth/logout`   | Revoke the refresh token and clear session.                               |
+| Method | Endpoint                        | Auth Required | Description                                          |
+| :----- | :------------------------------ | :------------ | :--------------------------------------------------- |
+| `POST` | `/api/auth/register`            | No            | User registration. Returns user data + sets cookies. |
+| `POST` | `/api/auth/login`               | No            | User login. Returns user data + sets cookies.        |
+| `POST` | `/api/auth/refresh`             | No            | Refresh access token from httpOnly cookie.           |
+| `POST` | `/api/auth/logout`              | No            | Revoke refresh token and clear cookies.              |
+| `GET`  | `/api/auth/me`                  | Yes           | Get current authenticated user from JWT payload.    |
+| `GET`  | `/api/auth/sessions`            | Yes           | List all active sessions for current user.           |
+| `POST` | `/api/auth/sessions/revoke/:id` | Yes           | Revoke a specific session by token ID.               |
+| `POST` | `/api/auth/sessions/revoke-all` | Yes           | Revoke all sessions except the current one.          |
 
-## 🛠️ Features
+## Features
 
 - **Password Hashing**: Secure storage using `bcrypt` (12 rounds).
-- **JWT Management**:
-  - **Access Tokens**: Short-lived (15 minutes expiry).
-  - **Refresh Tokens**: Long-lived (7 days expiry).
-- **Credit System**: Automatic initialization of 10 free credits upon successful registration.
-- **Token Security**: Refresh token storage in the database for session management and revocation.
+- **JWT via httpOnly Cookies**: Tokens are never exposed in response bodies.
+  - **Access Token**: 15 minutes expiry (`accessToken` cookie).
+  - **Refresh Token**: 7 days expiry (`refreshToken` cookie).
+- **Token Rotation**: On each refresh, the old refresh token is revoked and a new one is issued.
+- **Token Reuse Detection**: If a revoked token is used again, all tokens for that user are immediately revoked (security measure).
+- **Session Limiting**: Max 5 active refresh tokens per user; oldest are revoked when exceeded.
+- **Automatic Cleanup**: Expired and revoked tokens are deleted from the DB on each login/register.
+- **No Credit System**: All generations are free and unlimited. Registration does not initialize credits.

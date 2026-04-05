@@ -22,6 +22,7 @@ import { ProductsModule } from './products/products.module';
 import { StyleCompatModule } from './style-compat/style-compat.module';
 import { CompatModule } from './compat/compat.module';
 import { GalleryModule } from './gallery/gallery.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 // Guards
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -64,6 +65,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     StyleCompatModule,
     CompatModule,
     GalleryModule,
+    WebhooksModule,
   ],
   providers: [
     {

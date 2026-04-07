@@ -6,6 +6,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import cookieParser from 'cookie-parser';
+import * as express from 'express';
 
 // Global /api prefix
 // Global validation pipe
@@ -18,6 +19,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'],
   });
+
+  // Raw body required for Shopify HMAC webhook verification.
+  // Must be registered before setGlobalPrefix and cookieParser so the
+  // route-specific middleware takes precedence over the global JSON parser.
+  app.use('/api/webhooks/shopify', express.raw({ type: '*/*' }));
 
   // Global prefix
   app.setGlobalPrefix('api');

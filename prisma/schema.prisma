@@ -272,3 +272,27 @@ model AuditLog {
   @@index([createdAt(sort: Desc)])
   @@map("audit_logs")
 }
+
+// ============================================
+// SYNC LOGS
+// ============================================
+
+model SyncLog {
+  id                  String    @id @default(uuid())
+  type                String    // 'cron' | 'manual' | 'webhook'
+  status              String    // 'running' | 'completed' | 'failed'
+  startedAt           DateTime  @map("started_at")
+  completedAt         DateTime? @map("completed_at")
+  productsChecked     Int?      @map("products_checked")
+  productsCreated     Int?      @map("products_created")
+  productsUpdated     Int?      @map("products_updated")
+  productsDeactivated Int?      @map("products_deactivated")
+  errors              Json?
+  metadata            Json?
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  @@index([type])
+  @@index([status])
+  @@index([startedAt(sort: Desc)])
+  @@map("sync_logs")
+}

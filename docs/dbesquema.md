@@ -175,3 +175,28 @@ user_agent varchar
 details json
 created_at timestamp
 }
+
+// ============================================
+// SYNC LOGS
+// ============================================
+
+Table sync_logs {
+id varchar [pk]
+type varchar [not null, note: 'cron | manual | webhook']
+status varchar [not null, note: 'running | completed | failed']
+started_at timestamp [not null]
+completed_at timestamp
+products_checked int
+products_created int
+products_updated int
+products_deactivated int
+errors json
+metadata json
+created_at timestamp
+
+indexes {
+type
+status
+(started_at) [name: 'idx_sync_logs_started_at']
+}
+}

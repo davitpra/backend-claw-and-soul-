@@ -146,18 +146,20 @@ model StyleImage {
 // ============================================
 
 model Format {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  displayName String   @map("display_name")
-  aspectRatio String   @map("aspect_ratio")
-  width       Int
-  height      Int
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+  id                   String   @id @default(uuid())
+  name                 String   @unique
+  displayName          String   @map("display_name")
+  aspectRatio          String   @map("aspect_ratio")
+  width                Int
+  height               Int
+  shopifyVariantOption String?  @map("shopify_variant_option")
+  isActive             Boolean  @default(true) @map("is_active")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
 
-  generations  Generation[]
-  compatMatrix StyleFormatProductCompat[]
+  generations     Generation[]
+  compatMatrix    StyleFormatProductCompat[]
+  productVariants ProductFormatVariant[]
 
   @@index([isActive])
   @@map("formats")
@@ -166,6 +168,7 @@ model Format {
 model ProductReference {
   id               String   @id @default(uuid())
   shopifyProductId String   @unique @map("shopify_product_id")
+  shopifyHandle    String?  @map("shopify_handle")
   name             String
   displayName      String   @map("display_name")
   description      String?
@@ -173,11 +176,30 @@ model ProductReference {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
 
-  generations  Generation[]
-  compatMatrix StyleFormatProductCompat[]
+  generations     Generation[]
+  compatMatrix    StyleFormatProductCompat[]
+  productVariants ProductFormatVariant[]
 
   @@index([isActive])
   @@map("product_references")
+}
+
+model ProductFormatVariant {
+  id                  String   @id @default(uuid())
+  productRefId        String   @map("product_ref_id")
+  formatId            String   @map("format_id")
+  shopifyVariantId    String   @map("shopify_variant_id")
+  shopifyVariantTitle String   @map("shopify_variant_title")
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
+
+  productRef ProductReference @relation(fields: [productRefId], references: [id], onDelete: Cascade)
+  format     Format           @relation(fields: [formatId], references: [id], onDelete: Cascade)
+
+  @@unique([productRefId, formatId])
+  @@index([shopifyVariantId])
+  @@map("product_format_variants")
 }
 
 // ============================================

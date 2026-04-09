@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ShopifyProductPayload } from './dto/shopify-product.dto';
+import { ShopifyProductPayload, ShopifyVariant } from './dto/shopify-product.dto';
 
 @Injectable()
 export class ProductSyncService {
@@ -14,6 +14,7 @@ export class ProductSyncService {
     const shopifyProductId = String(shopifyProduct.id);
     const data = {
       name: shopifyProduct.handle,
+      shopifyHandle: shopifyProduct.handle,
       displayName: shopifyProduct.title,
       description: this.stripHtml(shopifyProduct.body_html),
       isActive: shopifyProduct.status === 'active',
@@ -41,6 +42,72 @@ export class ProductSyncService {
     }
   }
 
+  async syncVariants(
+    productRefId: string,
+    variants: ShopifyVariant[],
+    productName: string,
+  ): Promise<{ synced: number; skipped: number }> {
+    let synced = 0;
+    let skipped = 0;
+
+    const incomingVariantIds = variants.map((v) => String(v.id));
+
+    for (const variant of variants) {
+      // Extract the Size option (option1 is typically "Size" for print products)
+      const sizeValue = variant.option1?.trim();
+
+      if (!sizeValue) {
+        this.logger.warn(
+          `Variant ${variant.id} of product '${productName}' has no size option — skipping`,
+        );
+        skipped++;
+        continue;
+      }
+
+      const format = await this.prisma.format.findFirst({
+        where: { shopifyVariantOption: sizeValue },
+      });
+
+      if (!format) {
+        this.logger.warn(
+          `Variant '${sizeValue}' of product '${productName}' has no configured format — skipping`,
+        );
+        skipped++;
+        continue;
+      }
+
+      await this.prisma.productFormatVariant.upsert({
+        where: { productRefId_formatId: { productRefId, formatId: format.id } },
+        create: {
+          productRefId,
+          formatId: format.id,
+          shopifyVariantId: String(variant.id),
+          shopifyVariantTitle: variant.title,
+          isActive: true,
+        },
+        update: {
+          shopifyVariantId: String(variant.id),
+          shopifyVariantTitle: variant.title,
+          isActive: true,
+        },
+      });
+
+      synced++;
+    }
+
+    // Deactivate variants that are no longer present in Shopify
+    await this.prisma.productFormatVariant.updateMany({
+      where: {
+        productRefId,
+        shopifyVariantId: { notIn: incomingVariantIds },
+        isActive: true,
+      },
+      data: { isActive: false },
+    });
+
+    return { synced, skipped };
+  }
+
   async softDeleteProduct(
     shopifyProductId: string,
   ): Promise<{ action: 'deactivated' | 'not_found'; id?: string }> {
@@ -61,6 +128,10 @@ export class ProductSyncService {
         data: { isActive: false },
       }),
       this.prisma.styleFormatProductCompat.updateMany({
+        where: { productRefId: existing.id },
+        data: { isActive: false },
+      }),
+      this.prisma.productFormatVariant.updateMany({
         where: { productRefId: existing.id },
         data: { isActive: false },
       }),

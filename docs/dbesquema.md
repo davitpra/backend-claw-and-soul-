@@ -1,5 +1,5 @@
 // ClawAndSoul - AI Pet Portrait E-Commerce Platform
-// Database Schema v2.0
+// Database Schema v3.0
 // Updated: April 2026
 
 // ============================================
@@ -91,11 +91,12 @@ created_at timestamp
 
 Table formats {
 id varchar [pk]
-name varchar [not null, unique, note: 'slug: square, portrait, landscape_wide']
+name varchar [not null, unique, note: 'slug: portrait_8x10, portrait_12x16, museum_20x25, etc.']
 display_name varchar [not null]
-aspect_ratio varchar [not null, note: '1:1, 16:9, 3:4, etc.']
-width int [not null, note: 'base width in px for generation']
-height int [not null, note: 'base height in px for generation']
+aspect_ratio varchar [not null, note: '4:5, 3:4, 2:3, etc.']
+width int [not null, note: 'width in px at 300 DPI']
+height int [not null, note: 'height in px at 300 DPI']
+shopify_variant_option varchar [note: 'exact Shopify option string for auto-matching, e.g. 8″×10″']
 is_active boolean
 created_at timestamp
 updated_at timestamp
@@ -103,13 +104,30 @@ updated_at timestamp
 
 Table product_references {
 id varchar [pk]
-shopify_product_id varchar [not null, unique, note: 'Shopify product ID reference']
-name varchar [not null, note: 'slug: poster, puzzle, canvas']
+shopify_product_id varchar [not null, unique, note: 'numeric Shopify product ID']
+shopify_handle varchar [note: 'Shopify product handle, e.g. framed-canvas']
+name varchar [not null, note: 'slug derived from Shopify handle']
 display_name varchar [not null]
 description text
 is_active boolean
 created_at timestamp
 updated_at timestamp
+}
+
+Table product_format_variants {
+id varchar [pk]
+product_ref_id varchar [not null, ref: > product_references.id]
+format_id varchar [not null, ref: > formats.id]
+shopify_variant_id varchar [not null, note: 'numeric Shopify variant ID']
+shopify_variant_title varchar [not null, note: 'e.g. Black / 12″×16″']
+is_active boolean
+created_at timestamp
+updated_at timestamp
+
+indexes {
+(product_ref_id, format_id) [unique]
+shopify_variant_id
+}
 }
 
 // ============================================
@@ -140,8 +158,8 @@ user_id varchar [not null, ref: > users.id]
 pet_id varchar [not null, ref: > pets.id]
 pet_photo_id varchar [ref: > pet_photos.id]
 style_id varchar [not null, ref: > styles.id]
-format_id varchar [not null, ref: > formats.id]
-product_ref_id varchar [not null, ref: > product_references.id]
+format_id varchar [ref: > formats.id]
+product_ref_id varchar [ref: > product_references.id]
 type varchar [not null]
 status varchar
 prompt text [not null]

@@ -145,6 +145,8 @@ export class SyncService implements OnApplicationBootstrap {
     let productsCreated = 0;
     let productsUpdated = 0;
     let productsDeactivated = 0;
+    let variantsSynced = 0;
+    let variantsSkipped = 0;
     const errors: string[] = [];
 
     try {
@@ -159,6 +161,14 @@ export class SyncService implements OnApplicationBootstrap {
           const result = await this.productSyncService.upsertProduct(product);
           if (result.action === 'created') productsCreated++;
           else productsUpdated++;
+
+          const variantResult = await this.productSyncService.syncVariants(
+            result.id,
+            product.variants ?? [],
+            product.handle,
+          );
+          variantsSynced += variantResult.synced;
+          variantsSkipped += variantResult.skipped;
         } catch (err) {
           const msg = `Failed to upsert product ${product.id}: ${(err as Error).message}`;
           this.logger.error(msg);
@@ -195,12 +205,14 @@ export class SyncService implements OnApplicationBootstrap {
           productsUpdated,
           productsDeactivated,
           errors: errors.length > 0 ? errors : undefined,
+          metadata: { variantsSynced, variantsSkipped },
         },
       });
 
       this.logger.log(
         `Sync ${syncId} completed: checked=${productsChecked} created=${productsCreated} ` +
-          `updated=${productsUpdated} deactivated=${productsDeactivated} errors=${errors.length}`,
+          `updated=${productsUpdated} deactivated=${productsDeactivated} ` +
+          `variantsSynced=${variantsSynced} variantsSkipped=${variantsSkipped} errors=${errors.length}`,
       );
     } catch (err) {
       this.logger.error(`Sync ${syncId} failed`, err);

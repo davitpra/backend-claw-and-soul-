@@ -13,10 +13,23 @@ export class CompatService {
   async getFormatsByProduct(productId: string) {
     const entries = await this.prisma.styleFormatProductCompat.findMany({
       where: { productRefId: productId, isActive: true },
-      select: { format: true },
+      select: {
+        format: true,
+        formatId: true,
+      },
       distinct: ['formatId'],
     });
-    return entries.map((e) => e.format);
+
+    const variantMap = await this.buildVariantMap(
+      productId,
+      entries.map((e) => e.formatId),
+    );
+
+    return entries.map((e) => ({
+      ...e.format,
+      shopifyVariantId: variantMap[e.formatId]?.shopifyVariantId ?? null,
+      shopifyVariantOption: e.format.shopifyVariantOption ?? null,
+    }));
   }
 
   async getStylesByProductAndFormat(productId: string, formatId: string) {
@@ -51,9 +64,21 @@ export class CompatService {
       where: {
         styleId_formatId_productRefId: { styleId, formatId, productRefId: productId },
       },
+      include: { format: true },
     });
+
     if (!rule || !rule.isActive) return { compatible: false };
-    return { compatible: true, rule };
+
+    const variant = await this.prisma.productFormatVariant.findUnique({
+      where: { productRefId_formatId: { productRefId: productId, formatId } },
+    });
+
+    return {
+      compatible: true,
+      format: rule.format,
+      shopifyVariantId: variant?.isActive ? variant.shopifyVariantId : null,
+      constraints: rule.constraints ?? null,
+    };
   }
 
   // --- ADMIN ---
@@ -118,5 +143,21 @@ export class CompatService {
       })),
       skipDuplicates: true,
     });
+  }
+
+  // --- PRIVATE ---
+
+  private async buildVariantMap(
+    productRefId: string,
+    formatIds: string[],
+  ): Promise<Record<string, { shopifyVariantId: string }>> {
+    if (formatIds.length === 0) return {};
+
+    const variants = await this.prisma.productFormatVariant.findMany({
+      where: { productRefId, formatId: { in: formatIds }, isActive: true },
+      select: { formatId: true, shopifyVariantId: true },
+    });
+
+    return Object.fromEntries(variants.map((v) => [v.formatId, { shopifyVariantId: v.shopifyVariantId }]));
   }
 }

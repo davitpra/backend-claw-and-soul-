@@ -35,10 +35,22 @@ export class CompatService {
   async getStylesByProductAndFormat(productId: string, formatId: string) {
     const entries = await this.prisma.styleFormatProductCompat.findMany({
       where: { productRefId: productId, formatId, isActive: true },
-      select: { style: true },
+      select: {
+        style: {
+          include: {
+            images: {
+              where: { isPrimary: true },
+              take: 1,
+              select: { imageUrl: true },
+            },
+          },
+        },
+      },
       distinct: ['styleId'],
     });
-    return entries.map((e) => e.style);
+    return entries
+      .map((e) => e.style)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
   async getFormatsByStyle(styleId: string) {

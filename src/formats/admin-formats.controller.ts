@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   Patch,
   Post,
@@ -26,6 +27,21 @@ import { RolesGuard } from '../common/guards/roles.guard';
 @Roles('admin')
 export class AdminFormatsController {
   constructor(private readonly formatsService: FormatsService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'List all formats (including inactive)' })
+  @ApiResponse({ status: 200, description: 'Formats retrieved successfully' })
+  findAll() {
+    return this.formatsService.findAll();
+  }
+
+  @Get(':formatId')
+  @ApiOperation({ summary: 'Get a format by ID' })
+  @ApiResponse({ status: 200, description: 'Format retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Format not found' })
+  findOne(@Param('formatId') formatId: string) {
+    return this.formatsService.findOne(formatId);
+  }
 
   @Post()
   @ApiOperation({ summary: 'Create a new format' })

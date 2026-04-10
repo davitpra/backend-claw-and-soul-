@@ -1,6 +1,6 @@
 // ClawAndSoul - AI Pet Portrait E-Commerce Platform
-// Database Schema v3.0
-// Updated: April 2026
+// Database Schema v3.1
+// Updated: April 9, 2026
 
 // ============================================
 // AUTHENTICATION & USERS
@@ -11,12 +11,17 @@ id varchar [pk]
 email varchar [not null, unique]
 password_hash varchar [not null]
 full_name varchar
-role varchar
+role varchar [note: 'Enum: user, premium, admin']
 email_verified boolean
 is_active boolean
 last_login_at timestamp
 created_at timestamp
 updated_at timestamp
+
+indexes {
+email [unique]
+role
+}
 }
 
 Table refresh_tokens {
@@ -36,13 +41,19 @@ Table pets {
 id varchar [pk]
 user_id varchar [not null, ref: > users.id]
 name varchar [not null]
-species varchar [not null]
+species varchar [not null, note: 'Enum: dog, cat, bird, rabbit, other']
 breed varchar
 age int
 description text
 is_active boolean
 created_at timestamp
 updated_at timestamp
+
+indexes {
+user_id
+species
+(user_id, is_active)
+}
 }
 
 Table pet_photos {
@@ -61,7 +72,7 @@ created_at timestamp
 
 Table styles {
 id varchar [pk]
-name varchar [not null]
+name varchar [not null, unique]
 display_name varchar [not null]
 description text
 category varchar [not null]
@@ -72,6 +83,13 @@ parameters json
 sort_order int
 created_at timestamp
 updated_at timestamp
+
+indexes {
+category
+is_active
+sort_order
+(category, is_active)
+}
 }
 
 Table style_images {
@@ -145,6 +163,8 @@ created_at timestamp
 
 indexes {
 (style_id, format_id, product_ref_id) [unique]
+style_id
+format_id
 }
 }
 
@@ -160,8 +180,8 @@ pet_photo_id varchar [ref: > pet_photos.id]
 style_id varchar [not null, ref: > styles.id]
 format_id varchar [ref: > formats.id]
 product_ref_id varchar [ref: > product_references.id]
-type varchar [not null]
-status varchar
+type varchar [not null, note: 'Enum: image, video']
+status varchar [note: 'Enum: pending, processing, completed, failed']
 prompt text [not null]
 negative_prompt text
 result_url varchar
@@ -176,6 +196,17 @@ is_favorite boolean
 created_at timestamp
 completed_at timestamp
 updated_at timestamp
+
+indexes {
+user_id
+pet_id
+pet_photo_id
+status
+type
+(user_id, status)
+(user_id, type)
+created_at [note: 'sort: desc']
+}
 }
 
 // ============================================

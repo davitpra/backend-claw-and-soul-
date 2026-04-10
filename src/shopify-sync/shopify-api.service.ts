@@ -38,6 +38,19 @@ export class ShopifyApiService {
     return all;
   }
 
+  async fetchProductById(shopifyProductId: string): Promise<ShopifyProductPayload | null> {
+    try {
+      const response = await this.fetchWithRetry(
+        `${this.baseUrl}/products/${shopifyProductId}.json`,
+      );
+      const json = (await response.json()) as { product: ShopifyProductPayload };
+      return json.product ?? null;
+    } catch {
+      this.logger.warn(`Could not fetch Shopify product ${shopifyProductId}`);
+      return null;
+    }
+  }
+
   async registerWebhooks(appPublicUrl: string): Promise<void> {
     for (const topic of WEBHOOK_TOPICS) {
       const topicSlug = topic.replace('/', '-').replace('products-', 'product/');

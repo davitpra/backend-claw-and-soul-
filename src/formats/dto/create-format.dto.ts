@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsInt, MaxLength, Min } from 'class-validator';
+import { IsString, IsInt, IsOptional, MaxLength, Min } from 'class-validator';
 
 export class CreateFormatDto {
   @ApiProperty({ example: 'square_1x1' })
@@ -26,4 +26,10 @@ export class CreateFormatDto {
   @IsInt()
   @Min(1)
   height: number;
+
+  @ApiProperty({ example: '8x10', required: false, description: 'Shopify variant option value used to match this format during sync' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  shopifyVariantOption?: string;
 }

@@ -17,6 +17,19 @@ export class ProductsController {
   }
 
   @Public()
+  @Get(':handle/variants')
+  @ApiOperation({
+    summary: 'Get product variants with pre-resolved formatId mapping',
+    description:
+      'Looks up a product by its Shopify handle and returns the active variants with their backend formatId. The shopifyVariantId is normalized to the GID format used by the Shopify Storefront API so the frontend can match directly.',
+  })
+  @ApiResponse({ status: 200, description: 'Variants retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  findByHandleWithVariants(@Param('handle') handle: string) {
+    return this.productsService.findByHandleWithVariants(handle);
+  }
+
+  @Public()
   @Get(':productId')
   @ApiOperation({ summary: 'Get product by ID' })
   @ApiResponse({ status: 200, description: 'Product retrieved successfully' })

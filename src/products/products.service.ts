@@ -7,6 +7,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
+function toShopifyVariantGid(id: string): string {
+  if (id.startsWith('gid://')) return id;
+  return `gid://shopify/ProductVariant/${id}`;
+}
+
 @Injectable()
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
@@ -16,6 +21,41 @@ export class ProductsService {
       where: { isActive: true },
       orderBy: { name: 'asc' },
     });
+  }
+
+  async findByHandleWithVariants(handle: string) {
+    const product = await this.prisma.productReference.findFirst({
+      where: { shopifyHandle: handle, isActive: true },
+      include: {
+        productVariants: {
+          where: { isActive: true },
+          include: { format: true },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Product with handle '${handle}' not found`);
+    }
+
+    return {
+      productRefId: product.id,
+      shopifyProductId: product.shopifyProductId,
+      shopifyHandle: product.shopifyHandle,
+      name: product.name,
+      displayName: product.displayName,
+      description: product.description,
+      variants: product.productVariants.map((v) => ({
+        shopifyVariantId: toShopifyVariantGid(v.shopifyVariantId),
+        shopifyVariantTitle: v.shopifyVariantTitle,
+        formatId: v.format.id,
+        formatName: v.format.name,
+        formatDisplayName: v.format.displayName,
+        aspectRatio: v.format.aspectRatio,
+        width: v.format.width,
+        height: v.format.height,
+      })),
+    };
   }
 
   async findOne(id: string) {

@@ -9,11 +9,10 @@ import {
   Max,
 } from 'class-validator';
 
-
 export class CreateImageGenerationDto {
   @ApiProperty({ description: 'Pet ID' })
   @IsUUID()
-  petId: string;
+  petId!: string;
 
   @ApiProperty({ description: 'Pet photo ID (optional)' })
   @IsOptional()
@@ -22,7 +21,7 @@ export class CreateImageGenerationDto {
 
   @ApiProperty({ description: 'Style ID' })
   @IsUUID()
-  styleId: string;
+  styleId!: string;
 
   @ApiProperty({ description: 'Custom prompt (optional)' })
   @IsOptional()

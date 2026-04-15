@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -105,7 +106,7 @@ export class AuthService {
 
       // Check if refresh token exists and is not revoked
       const storedToken = await this.prisma.refreshToken.findUnique({
-        where: { token: refreshToken },
+        where: { token: this.hashToken(refreshToken) },
       });
 
       if (!storedToken || storedToken.isRevoked) {
@@ -154,7 +155,7 @@ export class AuthService {
   async logout(refreshToken: string) {
     try {
       await this.prisma.refreshToken.update({
-        where: { token: refreshToken },
+        where: { token: this.hashToken(refreshToken) },
         data: { isRevoked: true },
       });
       return { message: 'Logged out successfully' };
@@ -196,30 +197,28 @@ export class AuthService {
    * Revoke a specific session by token ID
    */
   async revokeSession(userId: string, tokenId: string) {
+    // Ensure the token belongs to the user (outside try/catch so the 404
+    // is not swallowed by the generic catch below)
+    const token = await this.prisma.refreshToken.findFirst({
+      where: { id: tokenId, userId },
+    });
+
+    if (!token) {
+      throw new UnauthorizedException('Session not found');
+    }
+
     try {
-      // Ensure the token belongs to the user
-      const token = await this.prisma.refreshToken.findFirst({
-        where: {
-          id: tokenId,
-          userId,
-        },
-      });
-
-      if (!token) {
-        throw new UnauthorizedException('Session not found');
-      }
-
       await this.prisma.refreshToken.update({
         where: { id: tokenId },
         data: { isRevoked: true },
       });
-
-      this.logger.log(`Session ${tokenId} revoked for user ${userId}`);
-
-      return { message: 'Session revoked successfully' };
     } catch (error) {
+      this.logger.error(`Failed to revoke session ${tokenId}:`, error);
       throw new UnauthorizedException('Failed to revoke session');
     }
+
+    this.logger.log(`Session ${tokenId} revoked for user ${userId}`);
+    return { message: 'Session revoked successfully' };
   }
 
   /**
@@ -227,11 +226,12 @@ export class AuthService {
    */
   async revokeAllOtherSessions(userId: string, currentToken?: string) {
     try {
+      const hashedCurrent = currentToken ? this.hashToken(currentToken) : undefined;
       const result = await this.prisma.refreshToken.updateMany({
         where: {
           userId,
           isRevoked: false,
-          ...(currentToken && { token: { not: currentToken } }),
+          ...(hashedCurrent && { token: { not: hashedCurrent } }),
         },
         data: { isRevoked: true },
       });
@@ -269,14 +269,14 @@ export class AuthService {
     // Limit active refresh tokens per user (security measure)
     await this.limitActiveTokens(userId, 5); // Max 5 active sessions
 
-    // Store refresh token in database
+    // Store hashed refresh token in database (Fix 1: never store raw tokens)
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
 
     await this.prisma.refreshToken.create({
       data: {
         userId,
-        token: refreshToken,
+        token: this.hashToken(refreshToken),
         expiresAt,
       },
     });
@@ -285,6 +285,11 @@ export class AuthService {
       accessToken,
       refreshToken,
     };
+  }
+
+  /** SHA-256 hash of a token before DB storage/lookup */
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 
   private sanitizeUser(user: any) {
@@ -317,26 +322,25 @@ export class AuthService {
   }
 
   /**
-   * Clean up expired and revoked tokens for a user
-   * Helps keep the database clean and improves performance
+   * Clean up only date-expired tokens for a user.
+   *
+   * Fix 3: Revoked tokens are intentionally NOT deleted here. They must remain
+   * in the DB long enough for the reuse-detection logic in refreshToken() to
+   * fire (i.e., return isRevoked=true → revoke all sessions). The daily cron
+   * job in AuthCleanupService removes revoked tokens after 30 days.
    */
   private async cleanupExpiredTokens(userId: string): Promise<void> {
     try {
-      const now = new Date();
-
       const result = await this.prisma.refreshToken.deleteMany({
         where: {
           userId,
-          OR: [
-            { isRevoked: true },
-            { expiresAt: { lt: now } },
-          ],
+          expiresAt: { lt: new Date() },
         },
       });
 
       if (result.count > 0) {
         this.logger.log(
-          `Cleaned up ${result.count} expired/revoked tokens for user ${userId}`,
+          `Cleaned up ${result.count} expired tokens for user ${userId}`,
         );
       }
     } catch (error) {

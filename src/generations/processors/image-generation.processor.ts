@@ -1,18 +1,31 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
+import { Style, Pet, PetPhoto } from '@prisma/client';
 import { GenerationsService } from '../generations.service';
+import { StrategyRegistry } from '../pipeline/strategy.registry';
 import { QUEUE_NAMES, JOB_NAMES } from '../constants/queues.constants';
 
 interface GenerateJobData {
   generationId: string;
 }
 
+interface GenerationWithRelations {
+  id: string;
+  prompt: string | null;
+  style: Style;
+  pet: Pet;
+  petPhoto: PetPhoto | null;
+}
+
 @Processor(QUEUE_NAMES.IMAGE_GENERATION)
 export class ImageGenerationProcessor extends WorkerHost {
   private readonly logger = new Logger(ImageGenerationProcessor.name);
 
-  constructor(private readonly generationsService: GenerationsService) {
+  constructor(
+    private readonly generationsService: GenerationsService,
+    private readonly strategyRegistry: StrategyRegistry,
+  ) {
     super();
   }
 
@@ -23,32 +36,45 @@ export class ImageGenerationProcessor extends WorkerHost {
     }
 
     const { generationId } = job.data;
-    const startTime = Date.now();
-
     this.logger.log(`Processing image generation: ${generationId}`);
-    await this.generationsService.updateGenerationStatus(generationId, 'processing');
+
+    const raw = await this.generationsService.findForProcessing(generationId);
+    const generation = raw as unknown as GenerationWithRelations;
+
+    await this.generationsService.updateGenerationStatus(
+      generationId,
+      'processing',
+    );
 
     try {
-      // TODO: Reemplazar con llamada real a proveedor de IA (OpenAI, Stability AI, etc.)
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const petPhotoUrl = generation.petPhoto?.photoUrl ?? '';
+      if (!petPhotoUrl) {
+        throw new Error('No pet photo URL available for generation');
+      }
 
-      const processingTimeSeconds = Math.round((Date.now() - startTime) / 1000);
+      const strategy = this.strategyRegistry.get(generation.style.strategyKey);
 
-      await this.generationsService.updateGenerationStatus(generationId, 'completed', {
-        resultUrl: `https://placeholder.example.com/images/${generationId}.png`,
-        resultStorageKey: `generations/${generationId}/result.png`,
-        processingTimeSeconds,
+      const result = await strategy.execute({
+        generationId,
+        petPhotoUrl,
+        style: generation.style,
+        pet: generation.pet,
+        userPrompt: generation.prompt ?? undefined,
       });
 
-      this.logger.log(`Image generation completed: ${generationId} (${processingTimeSeconds}s)`);
+      await this.generationsService.markCompleted(generationId, result);
+      this.logger.log(
+        `Image generation completed: ${generationId} (${result.processingTimeSeconds}s)`,
+      );
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`Image generation failed: ${generationId}`, error instanceof Error ? error.stack : undefined);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(
+        `Image generation failed: ${generationId}`,
+        error instanceof Error ? error.stack : undefined,
+      );
 
-      await this.generationsService.updateGenerationStatus(generationId, 'failed', {
-        errorMessage,
-      });
-
+      await this.generationsService.markFailed(generationId, errorMessage);
       throw error;
     }
   }

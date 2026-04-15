@@ -8,6 +8,7 @@ import { BullModule } from '@nestjs/bullmq';
 import databaseConfig from './config/database.config';
 import redisConfig from './config/redis.config';
 import jwtConfig from './config/jwt.config';
+import aiConfig from './config/ai.config';
 
 // Module imports
 import { PrismaModule } from './prisma/prisma.module';
@@ -33,7 +34,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     // Global configuration
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, redisConfig, jwtConfig],
+      load: [databaseConfig, redisConfig, jwtConfig, aiConfig],
       envFilePath: ['.env.local', '.env'],
     }),
 

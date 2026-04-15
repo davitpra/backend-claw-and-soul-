@@ -82,7 +82,7 @@ export class GenerationsService {
   ) {
     const { skip, take } = getPaginationParams(page, limit);
 
-    const where: any = { userId };
+    const where: any = { userId, type: 'image' };
     if (status) where.status = status;
     if (petId) where.petId = petId;
 
@@ -187,6 +187,59 @@ export class GenerationsService {
 
     return this.prisma.generation.delete({
       where: { id },
+    });
+  }
+
+  async findForProcessing(generationId: string) {
+    const generation = await this.prisma.generation.findUnique({
+      where: { id: generationId },
+      include: {
+        style: true,
+        pet: true,
+        petPhoto: true,
+      },
+    });
+
+    if (!generation) {
+      throw new NotFoundException(`Generation ${generationId} not found`);
+    }
+
+    return generation;
+  }
+
+  async markCompleted(
+    generationId: string,
+    data: {
+      visionAnalysis?: Record<string, any>;
+      finalPrompt: string;
+      falRequestId: string;
+      resultUrl: string;
+      resultStorageKey: string;
+      processingTimeSeconds: number;
+    },
+  ) {
+    return this.prisma.generation.update({
+      where: { id: generationId },
+      data: {
+        status: 'completed',
+        completedAt: new Date(),
+        resultUrl: data.resultUrl,
+        resultStorageKey: data.resultStorageKey,
+        finalPrompt: data.finalPrompt,
+        falRequestId: data.falRequestId,
+        processingTimeSeconds: data.processingTimeSeconds,
+        visionAnalysis: data.visionAnalysis ?? undefined,
+      },
+    });
+  }
+
+  async markFailed(generationId: string, errorMessage: string) {
+    return this.prisma.generation.update({
+      where: { id: generationId },
+      data: {
+        status: 'failed',
+        errorMessage,
+      },
     });
   }
 }

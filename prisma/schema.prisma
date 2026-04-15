@@ -100,18 +100,24 @@ model PetPhoto {
 // ============================================
 
 model Style {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  displayName String   @map("display_name")
-  description String?
-  category    String
-  previewUrl  String?  @map("preview_url")
-  isActive    Boolean  @default(true) @map("is_active")
-  isPremium   Boolean  @default(false) @map("is_premium")
-  parameters  Json?
-  sortOrder   Int      @default(0) @map("sort_order")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+  id             String   @id @default(uuid())
+  name           String   @unique
+  displayName    String   @map("display_name")
+  description    String?
+  category       String
+  previewUrl     String?  @map("preview_url")
+  isActive       Boolean  @default(true) @map("is_active")
+  isPremium      Boolean  @default(false) @map("is_premium")
+  parameters     Json?
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Pipeline config
+  strategyKey    String   @default("default") @map("strategy_key")
+  falModel       String?  @map("fal_model")
+  promptTemplate String?  @db.Text @map("prompt_template")
+  visionEnabled  Boolean  @default(true) @map("vision_enabled")
 
   generations  Generation[]
   images       StyleImage[]
@@ -248,6 +254,9 @@ model Generation {
   processingTimeSeconds Int?      @map("processing_time_seconds")
   errorMessage          String?   @map("error_message")
   metadata              Json?
+  visionAnalysis        Json?     @map("vision_analysis")
+  finalPrompt           String?   @db.Text @map("final_prompt")
+  falRequestId          String?   @map("fal_request_id")
   isPublic              Boolean   @default(false) @map("is_public")
   isFavorite            Boolean   @default(false) @map("is_favorite")
   createdAt             DateTime  @default(now()) @map("created_at")

@@ -74,7 +74,11 @@ export class CompatService {
   async checkCompat(styleId: string, formatId: string, productId: string) {
     const rule = await this.prisma.styleFormatProductCompat.findUnique({
       where: {
-        styleId_formatId_productRefId: { styleId, formatId, productRefId: productId },
+        styleId_formatId_productRefId: {
+          styleId,
+          formatId,
+          productRefId: productId,
+        },
       },
       include: { format: true },
     });
@@ -133,7 +137,10 @@ export class CompatService {
     if (dto.constraints !== undefined) data.constraints = dto.constraints;
     if (dto.is_active !== undefined) data.isActive = dto.is_active;
 
-    return this.prisma.styleFormatProductCompat.update({ where: { id: compatId }, data });
+    return this.prisma.styleFormatProductCompat.update({
+      where: { id: compatId },
+      data,
+    });
   }
 
   async remove(compatId: string) {
@@ -142,7 +149,9 @@ export class CompatService {
     });
     if (!rule) throw new NotFoundException(`Compat rule ${compatId} not found`);
 
-    return this.prisma.styleFormatProductCompat.delete({ where: { id: compatId } });
+    return this.prisma.styleFormatProductCompat.delete({
+      where: { id: compatId },
+    });
   }
 
   async bulkCreate(dto: BulkCreateCompatRulesDto) {
@@ -170,6 +179,11 @@ export class CompatService {
       select: { formatId: true, shopifyVariantId: true },
     });
 
-    return Object.fromEntries(variants.map((v) => [v.formatId, { shopifyVariantId: v.shopifyVariantId }]));
+    return Object.fromEntries(
+      variants.map((v) => [
+        v.formatId,
+        { shopifyVariantId: v.shopifyVariantId },
+      ]),
+    );
   }
 }

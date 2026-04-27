@@ -1,6 +1,6 @@
 // ClawAndSoul - AI Pet Portrait E-Commerce Platform
-// Database Schema v3.1
-// Updated: April 9, 2026
+// Database Schema v3.3
+// Updated: April 25, 2026
 
 // ============================================
 // AUTHENTICATION & USERS
@@ -27,10 +27,16 @@ role
 Table refresh_tokens {
 id varchar [pk]
 user_id varchar [not null, ref: > users.id]
-token varchar [not null]
+token varchar [not null, unique]
 expires_at timestamp [not null]
 is_revoked boolean
 created_at timestamp
+
+indexes {
+user_id
+token [unique]
+expires_at
+}
 }
 
 // ============================================
@@ -64,6 +70,12 @@ photo_storage_key varchar [not null]
 is_primary boolean
 order_index int
 created_at timestamp
+
+indexes {
+pet_id
+(pet_id, is_primary)
+(pet_id, order_index)
+}
 }
 
 // ============================================
@@ -84,6 +96,14 @@ sort_order int
 created_at timestamp
 updated_at timestamp
 
+// Pipeline config
+strategy_key varchar [not null, default: 'default', note: 'Which generation strategy to use']
+fal_model varchar [note: 'fal.ai model ID override for this style']
+prompt_template text [note: 'Handlebars/template string for prompt construction']
+router_model varchar [note: 'Model used for routing/classification decisions']
+description_example text [note: 'Example description to guide prompt generation']
+template_vars json [note: 'Default template variable values for this style']
+
 indexes {
 category
 is_active
@@ -101,6 +121,11 @@ caption varchar
 order_index int [not null]
 is_primary boolean
 created_at timestamp
+
+indexes {
+style_id
+(style_id, order_index)
+}
 }
 
 // ============================================
@@ -118,6 +143,10 @@ shopify_variant_option varchar [note: 'exact Shopify option string for auto-matc
 is_active boolean
 created_at timestamp
 updated_at timestamp
+
+indexes {
+is_active
+}
 }
 
 Table product_references {
@@ -130,6 +159,10 @@ description text
 is_active boolean
 created_at timestamp
 updated_at timestamp
+
+indexes {
+is_active
+}
 }
 
 Table product_format_variants {
@@ -191,6 +224,10 @@ provider varchar [not null]
 processing_time_seconds int
 error_message text
 metadata json
+vision_analysis json [note: 'Raw output from vision model analyzing the pet photo']
+final_prompt text [note: 'Resolved prompt after template substitution and vision enrichment']
+fal_request_id varchar [note: 'fal.ai async request ID for status polling']
+prompt_snapshot json [note: 'Snapshot of style/prompt config at generation time']
 is_public boolean
 is_favorite boolean
 created_at timestamp
@@ -223,6 +260,12 @@ ip_address varchar
 user_agent varchar
 details json
 created_at timestamp
+
+indexes {
+user_id
+action
+(created_at) [note: 'sort: desc']
+}
 }
 
 // ============================================

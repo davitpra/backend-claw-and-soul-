@@ -1,6 +1,7 @@
 import { registerAs } from '@nestjs/config';
 
 export default registerAs('ai', () => ({
-  openaiKey: process.env.OPENAI_API_KEY || '',
   falKey: process.env.FAL_KEY || '',
+  openRouterDefaultModel:
+    process.env.OPENROUTER_DEFAULT_MODEL || 'google/gemini-2.5-flash',
 }));

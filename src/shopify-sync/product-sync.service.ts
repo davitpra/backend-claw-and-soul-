@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ShopifyProductPayload, ShopifyVariant } from './dto/shopify-product.dto';
+import {
+  ShopifyProductPayload,
+  ShopifyVariant,
+} from './dto/shopify-product.dto';
 
 @Injectable()
 export class ProductSyncService {
@@ -30,14 +33,18 @@ export class ProductSyncService {
         data,
       });
       await this.writeAuditLog('product_sync_updated', existing.id);
-      this.logger.debug(`Updated product ${shopifyProductId} (id: ${existing.id})`);
+      this.logger.debug(
+        `Updated product ${shopifyProductId} (id: ${existing.id})`,
+      );
       return { action: 'updated', id: existing.id };
     } else {
       const created = await this.prisma.productReference.create({
         data: { shopifyProductId, ...data },
       });
       await this.writeAuditLog('product_sync_created', created.id);
-      this.logger.debug(`Created product ${shopifyProductId} (id: ${created.id})`);
+      this.logger.debug(
+        `Created product ${shopifyProductId} (id: ${created.id})`,
+      );
       return { action: 'created', id: created.id };
     }
   }
@@ -138,7 +145,9 @@ export class ProductSyncService {
     ]);
 
     await this.writeAuditLog('product_sync_deactivated', existing.id);
-    this.logger.debug(`Deactivated product ${shopifyProductId} (id: ${existing.id})`);
+    this.logger.debug(
+      `Deactivated product ${shopifyProductId} (id: ${existing.id})`,
+    );
     return { action: 'deactivated', id: existing.id };
   }
 

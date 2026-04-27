@@ -27,7 +27,12 @@ export class CreateFormatDto {
   @Min(1)
   height: number;
 
-  @ApiProperty({ example: '8x10', required: false, description: 'Shopify variant option value used to match this format during sync' })
+  @ApiProperty({
+    example: '8x10',
+    required: false,
+    description:
+      'Shopify variant option value used to match this format during sync',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)

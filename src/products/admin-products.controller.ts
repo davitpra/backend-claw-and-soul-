@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -26,7 +35,9 @@ export class AdminProductsController {
   ) {}
 
   @Get(':productId/variants')
-  @ApiOperation({ summary: 'Get linked and unlinked Shopify variants for a product' })
+  @ApiOperation({
+    summary: 'Get linked and unlinked Shopify variants for a product',
+  })
   @ApiResponse({ status: 200, description: 'Variant link status retrieved' })
   @ApiResponse({ status: 404, description: 'Product not found' })
   async getVariantLinks(@Param('productId') productId: string) {
@@ -35,7 +46,11 @@ export class AdminProductsController {
     // Get all linked variants from DB
     const dbVariants = await this.prisma.productFormatVariant.findMany({
       where: { productRefId: productId },
-      include: { format: { select: { id: true, displayName: true, shopifyVariantOption: true } } },
+      include: {
+        format: {
+          select: { id: true, displayName: true, shopifyVariantOption: true },
+        },
+      },
     });
 
     const linkedVariantsMap = new Map(
@@ -82,7 +97,10 @@ export class AdminProductsController {
       if (linkedVariantsMap.has(shopifyVariantId)) {
         const dbVariant = linkedVariantsMap.get(shopifyVariantId)!;
         linkedVariants.push({
-          format: { id: dbVariant.format.id, displayName: dbVariant.format.displayName },
+          format: {
+            id: dbVariant.format.id,
+            displayName: dbVariant.format.displayName,
+          },
           shopifyVariantId,
           shopifyVariantTitle: variant.title,
           isActive: dbVariant.isActive,
@@ -126,7 +144,10 @@ export class AdminProductsController {
   @Post()
   @ApiOperation({ summary: 'Create a new product' })
   @ApiResponse({ status: 201, description: 'Product created successfully' })
-  @ApiResponse({ status: 409, description: 'Shopify product ID already exists' })
+  @ApiResponse({
+    status: 409,
+    description: 'Shopify product ID already exists',
+  })
   create(@Body() dto: CreateProductDto) {
     return this.productsService.create(dto);
   }
@@ -135,11 +156,11 @@ export class AdminProductsController {
   @ApiOperation({ summary: 'Update a product' })
   @ApiResponse({ status: 200, description: 'Product updated successfully' })
   @ApiResponse({ status: 404, description: 'Product not found' })
-  @ApiResponse({ status: 409, description: 'Shopify product ID already exists' })
-  update(
-    @Param('productId') productId: string,
-    @Body() dto: UpdateProductDto,
-  ) {
+  @ApiResponse({
+    status: 409,
+    description: 'Shopify product ID already exists',
+  })
+  update(@Param('productId') productId: string, @Body() dto: UpdateProductDto) {
     return this.productsService.update(productId, dto);
   }
 

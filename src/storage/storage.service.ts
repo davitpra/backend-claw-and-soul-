@@ -45,7 +45,10 @@ export class StorageService {
       await cloudinary.uploader.destroy(key);
       this.logger.log(`File deleted: ${key}`);
     } catch (error) {
-      this.logger.error(`Failed to delete file: ${key}`, (error as Error).message);
+      this.logger.error(
+        `Failed to delete file: ${key}`,
+        (error as Error).message,
+      );
       throw error;
     }
   }

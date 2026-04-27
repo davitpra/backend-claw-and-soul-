@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   getPaginationParams,
@@ -17,7 +18,7 @@ export class GalleryService {
   ) {
     const { skip, take } = getPaginationParams(page, limit);
 
-    const where: any = {
+    const where: Prisma.GenerationWhereInput = {
       isPublic: true,
       status: 'completed',
     };
@@ -51,7 +52,11 @@ export class GalleryService {
       },
     });
 
-    if (!generation || !generation.isPublic || generation.status !== 'completed') {
+    if (
+      !generation ||
+      !generation.isPublic ||
+      generation.status !== 'completed'
+    ) {
       throw new NotFoundException('Generation not found');
     }
 

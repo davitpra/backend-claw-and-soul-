@@ -9,7 +9,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { CompatService } from './compat.service';
 import { CreateCompatRuleDto } from './dto/create-compat-rule.dto';
 import { UpdateCompatRuleDto } from './dto/update-compat-rule.dto';
@@ -52,7 +57,10 @@ export class AdminCompatController {
 
   @Patch(':compatId')
   @ApiOperation({ summary: 'Update a compat rule' })
-  update(@Param('compatId') compatId: string, @Body() dto: UpdateCompatRuleDto) {
+  update(
+    @Param('compatId') compatId: string,
+    @Body() dto: UpdateCompatRuleDto,
+  ) {
     return this.compatService.update(compatId, dto);
   }
 

@@ -6,9 +6,11 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PetsService } from '../pets/pets.service';
 import { StylesService } from '../styles/styles.service';
+import { CompatService } from '../compat/compat.service';
 import { CreateImageGenerationDto } from './dto/create-image-generation.dto';
 import { UpdateGenerationFlagsDto } from './dto/update-generation-flags.dto';
 import {
@@ -25,6 +27,7 @@ export class GenerationsService {
     private prisma: PrismaService,
     private petsService: PetsService,
     private stylesService: StylesService,
+    private compatService: CompatService,
     @InjectQueue(QUEUE_NAMES.IMAGE_GENERATION) private imageQueue: Queue,
   ) {}
 
@@ -40,6 +43,18 @@ export class GenerationsService {
 
     // Validate style exists
     await this.stylesService.findOne(createDto.styleId);
+
+    // Validate (style, format, product) compatibility
+    const compat = await this.compatService.checkCompat(
+      createDto.styleId,
+      createDto.formatId,
+      createDto.productRefId,
+    );
+    if (!compat.compatible) {
+      throw new BadRequestException(
+        'Combination (style, format, product) is not in the compatibility matrix or is inactive',
+      );
+    }
 
     // Create generation record (no credit checks - all generations are free)
     const generation = await this.prisma.generation.create({
@@ -58,6 +73,7 @@ export class GenerationsService {
         metadata: {
           width: createDto.width || 1024,
           height: createDto.height || 1024,
+          compatConstraints: compat.constraints ?? {},
         },
       },
       include: {
@@ -68,7 +84,9 @@ export class GenerationsService {
 
     this.logger.log(`Image generation created: ${generation.id}`);
 
-    await this.imageQueue.add(JOB_NAMES.GENERATE, { generationId: generation.id });
+    await this.imageQueue.add(JOB_NAMES.GENERATE, {
+      generationId: generation.id,
+    });
 
     return generation;
   }
@@ -82,7 +100,7 @@ export class GenerationsService {
   ) {
     const { skip, take } = getPaginationParams(page, limit);
 
-    const where: any = { userId, type: 'image' };
+    const where: Prisma.GenerationWhereInput = { userId, type: 'image' };
     if (status) where.status = status;
     if (petId) where.petId = petId;
 
@@ -126,7 +144,7 @@ export class GenerationsService {
   async updateGenerationStatus(
     generationId: string,
     status: string,
-    data?: any,
+    data?: Prisma.GenerationUpdateInput,
   ) {
     return this.prisma.generation.update({
       where: { id: generationId },
@@ -152,9 +170,10 @@ export class GenerationsService {
       throw new BadRequestException('Access denied');
     }
 
+    const metadata = generation.metadata as Record<string, unknown> | null;
     return {
       status: generation.status,
-      progress: (generation.metadata as any)?.progress ?? null,
+      progress: (metadata?.progress ?? null) as number | null,
     };
   }
 
@@ -172,8 +191,12 @@ export class GenerationsService {
     return this.prisma.generation.update({
       where: { id },
       data: {
-        ...(updateDto.isPublic !== undefined && { isPublic: updateDto.isPublic }),
-        ...(updateDto.isFavorite !== undefined && { isFavorite: updateDto.isFavorite }),
+        ...(updateDto.isPublic !== undefined && {
+          isPublic: updateDto.isPublic,
+        }),
+        ...(updateDto.isFavorite !== undefined && {
+          isFavorite: updateDto.isFavorite,
+        }),
       },
     });
   }
@@ -197,6 +220,7 @@ export class GenerationsService {
         style: true,
         pet: true,
         petPhoto: true,
+        format: true,
       },
     });
 
@@ -216,6 +240,7 @@ export class GenerationsService {
       resultUrl: string;
       resultStorageKey: string;
       processingTimeSeconds: number;
+      promptSnapshot?: Record<string, any>;
     },
   ) {
     return this.prisma.generation.update({
@@ -229,6 +254,7 @@ export class GenerationsService {
         falRequestId: data.falRequestId,
         processingTimeSeconds: data.processingTimeSeconds,
         visionAnalysis: data.visionAnalysis ?? undefined,
+        promptSnapshot: data.promptSnapshot ?? undefined,
       },
     });
   }

@@ -100,24 +100,27 @@ model PetPhoto {
 // ============================================
 
 model Style {
-  id             String   @id @default(uuid())
-  name           String   @unique
-  displayName    String   @map("display_name")
-  description    String?
-  category       String
-  previewUrl     String?  @map("preview_url")
-  isActive       Boolean  @default(true) @map("is_active")
-  isPremium      Boolean  @default(false) @map("is_premium")
-  parameters     Json?
-  sortOrder      Int      @default(0) @map("sort_order")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+  id          String   @id @default(uuid())
+  name        String   @unique
+  displayName String   @map("display_name")
+  description String?
+  category    String
+  previewUrl  String?  @map("preview_url")
+  isActive    Boolean  @default(true) @map("is_active")
+  isPremium   Boolean  @default(false) @map("is_premium")
+  parameters  Json?
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
   // Pipeline config
-  strategyKey    String   @default("default") @map("strategy_key")
-  falModel       String?  @map("fal_model")
-  promptTemplate String?  @db.Text @map("prompt_template")
-  visionEnabled  Boolean  @default(true) @map("vision_enabled")
+  strategyKey        String  @default("default") @map("strategy_key")
+  falModel           String? @map("fal_model")
+  promptTemplate     String? @map("prompt_template") @db.Text
+  visionModel        String? @map("vision_model")
+  visionTemperature  Float?  @map("vision_temperature")
+  descriptionExample String? @map("description_example") @db.Text
+  templateVars       Json?   @map("template_vars")
 
   generations  Generation[]
   images       StyleImage[]
@@ -217,6 +220,8 @@ model StyleFormatProductCompat {
   styleId      String   @map("style_id")
   formatId     String   @map("format_id")
   productRefId String   @map("product_ref_id")
+  // Per-(style,format,product) overrides: maxPets, output resolution, prompt suffix,
+  // crop mode, print specs, etc. See backend/src/compat/compat.md → "El campo constraints".
   constraints  Json?
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
@@ -255,8 +260,9 @@ model Generation {
   errorMessage          String?   @map("error_message")
   metadata              Json?
   visionAnalysis        Json?     @map("vision_analysis")
-  finalPrompt           String?   @db.Text @map("final_prompt")
+  finalPrompt           String?   @map("final_prompt") @db.Text
   falRequestId          String?   @map("fal_request_id")
+  promptSnapshot        Json?     @map("prompt_snapshot")
   isPublic              Boolean   @default(false) @map("is_public")
   isFavorite            Boolean   @default(false) @map("is_favorite")
   createdAt             DateTime  @default(now()) @map("created_at")
@@ -310,8 +316,8 @@ model AuditLog {
 
 model SyncLog {
   id                  String    @id @default(uuid())
-  type                String    // 'cron' | 'manual' | 'webhook'
-  status              String    // 'running' | 'completed' | 'failed'
+  type                String // 'cron' | 'manual' | 'webhook'
+  status              String // 'running' | 'completed' | 'failed'
   startedAt           DateTime  @map("started_at")
   completedAt         DateTime? @map("completed_at")
   productsChecked     Int?      @map("products_checked")

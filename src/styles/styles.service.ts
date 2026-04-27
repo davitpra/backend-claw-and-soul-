@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,7 +14,7 @@ export class StylesService {
   ) {}
 
   async findAll(category?: string, isPremium?: boolean) {
-    const where: any = { isActive: true };
+    const where: Prisma.StyleWhereInput = { isActive: true };
     if (category) where.category = category;
     if (isPremium !== undefined) where.isPremium = isPremium;
 
@@ -49,10 +50,12 @@ export class StylesService {
   }
 
   async getStyleImages(styleId: string, isPrimary?: boolean) {
-    const style = await this.prisma.style.findUnique({ where: { id: styleId } });
+    const style = await this.prisma.style.findUnique({
+      where: { id: styleId },
+    });
     if (!style) throw new NotFoundException('Style not found');
 
-    const where: any = { styleId };
+    const where: Prisma.StyleImageWhereInput = { styleId };
     if (isPrimary !== undefined) where.isPrimary = isPrimary;
 
     return this.prisma.styleImage.findMany({

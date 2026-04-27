@@ -27,9 +27,9 @@ export class ShopifyWebhooksController {
   @Post('create')
   @ApiOperation({ summary: 'Shopify webhook: products/create' })
   async handleCreate(@Req() req: Request) {
-    const payload: ShopifyProductPayload = JSON.parse(
+    const payload = JSON.parse(
       (req.body as Buffer).toString('utf8'),
-    );
+    ) as ShopifyProductPayload;
     await this.syncQueue.add(
       SHOPIFY_SYNC_JOB_NAMES.UPSERT,
       { jobType: 'upsert', payload },
@@ -41,9 +41,9 @@ export class ShopifyWebhooksController {
   @Post('update')
   @ApiOperation({ summary: 'Shopify webhook: products/update' })
   async handleUpdate(@Req() req: Request) {
-    const payload: ShopifyProductPayload = JSON.parse(
+    const payload = JSON.parse(
       (req.body as Buffer).toString('utf8'),
-    );
+    ) as ShopifyProductPayload;
     await this.syncQueue.add(
       SHOPIFY_SYNC_JOB_NAMES.UPSERT,
       { jobType: 'upsert', payload },
@@ -55,9 +55,9 @@ export class ShopifyWebhooksController {
   @Post('delete')
   @ApiOperation({ summary: 'Shopify webhook: products/delete' })
   async handleDelete(@Req() req: Request) {
-    const payload: ShopifyDeletePayload = JSON.parse(
+    const payload = JSON.parse(
       (req.body as Buffer).toString('utf8'),
-    );
+    ) as ShopifyDeletePayload;
     await this.syncQueue.add(
       SHOPIFY_SYNC_JOB_NAMES.DELETE,
       { jobType: 'delete', payload },

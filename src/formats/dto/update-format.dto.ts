@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class UpdateFormatDto {
   @ApiProperty({ example: 'Square 1:1', required: false })
@@ -25,7 +32,12 @@ export class UpdateFormatDto {
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiProperty({ example: '8x10', required: false, description: 'Shopify variant option value used to match this format during sync' })
+  @ApiProperty({
+    example: '8x10',
+    required: false,
+    description:
+      'Shopify variant option value used to match this format during sync',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)

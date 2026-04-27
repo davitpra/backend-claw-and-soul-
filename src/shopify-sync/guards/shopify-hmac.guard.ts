@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import type { Request } from 'express';
 
 @Injectable()
 export class ShopifyHmacGuard implements CanActivate {
@@ -15,12 +16,16 @@ export class ShopifyHmacGuard implements CanActivate {
   constructor(private readonly configService: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    const hmacHeader: string = request.headers['x-shopify-hmac-sha256'];
-    const rawBody: Buffer = request.body;
+    const request = context.switchToHttp().getRequest<Request>();
+    const hmacHeader = request.headers['x-shopify-hmac-sha256'] as
+      | string
+      | undefined;
+    const rawBody = request.body as unknown;
 
     if (!hmacHeader || !Buffer.isBuffer(rawBody)) {
-      this.logger.warn('Shopify webhook rejected: missing HMAC header or raw body');
+      this.logger.warn(
+        'Shopify webhook rejected: missing HMAC header or raw body',
+      );
       throw new UnauthorizedException('Missing HMAC header or raw body');
     }
 

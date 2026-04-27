@@ -12,7 +12,11 @@ export class GalleryController {
   @Get()
   @ApiOperation({ summary: 'Get public generations gallery' })
   @ApiQuery({ name: 'style_id', required: false, type: String })
-  @ApiQuery({ name: 'species', required: false, enum: ['dog', 'cat', 'bird', 'rabbit', 'other'] })
+  @ApiQuery({
+    name: 'species',
+    required: false,
+    enum: ['dog', 'cat', 'bird', 'rabbit', 'other'],
+  })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Gallery retrieved successfully' })
@@ -33,7 +37,10 @@ export class GalleryController {
   @Public()
   @Get(':genId')
   @ApiOperation({ summary: 'Get public generation detail' })
-  @ApiResponse({ status: 200, description: 'Generation retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Generation retrieved successfully',
+  })
   @ApiResponse({ status: 404, description: 'Generation not found' })
   findOne(@Param('genId') genId: string) {
     return this.galleryService.findOnePublic(genId);

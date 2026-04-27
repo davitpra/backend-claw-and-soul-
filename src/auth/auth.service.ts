@@ -11,6 +11,8 @@ import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import type { User } from '@prisma/client';
+import type { JwtPayload } from './strategies/jwt.strategy';
 
 @Injectable()
 export class AuthService {
@@ -55,7 +57,8 @@ export class AuthService {
         ...tokens,
       };
     } catch (error) {
-      this.logger.error('Registration failed', error.stack);
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.error('Registration failed', stack);
       throw error;
     }
   }
@@ -100,9 +103,12 @@ export class AuthService {
 
   async refreshToken(refreshToken: string) {
     try {
-      const payload = await this.jwtService.verifyAsync(refreshToken, {
-        secret: this.configService.get<string>('jwt.refreshSecret'),
-      });
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(
+        refreshToken,
+        {
+          secret: this.configService.get<string>('jwt.refreshSecret'),
+        },
+      );
 
       // Check if refresh token exists and is not revoked
       const storedToken = await this.prisma.refreshToken.findUnique({
@@ -159,7 +165,7 @@ export class AuthService {
         data: { isRevoked: true },
       });
       return { message: 'Logged out successfully' };
-    } catch (error) {
+    } catch {
       // Token might not exist, but that's okay
       return { message: 'Logged out successfully' };
     }
@@ -226,7 +232,9 @@ export class AuthService {
    */
   async revokeAllOtherSessions(userId: string, currentToken?: string) {
     try {
-      const hashedCurrent = currentToken ? this.hashToken(currentToken) : undefined;
+      const hashedCurrent = currentToken
+        ? this.hashToken(currentToken)
+        : undefined;
       const result = await this.prisma.refreshToken.updateMany({
         where: {
           userId,
@@ -244,7 +252,7 @@ export class AuthService {
         message: 'All other sessions revoked successfully',
         count: result.count,
       };
-    } catch (error) {
+    } catch {
       throw new UnauthorizedException('Failed to revoke sessions');
     }
   }
@@ -292,8 +300,9 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  private sanitizeUser(user: any) {
+  private sanitizeUser(user: User): Omit<User, 'passwordHash'> {
     const { passwordHash, ...result } = user;
+    void passwordHash;
     return result;
   }
 

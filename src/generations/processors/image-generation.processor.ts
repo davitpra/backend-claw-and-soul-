@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { Style, Pet, PetPhoto } from '@prisma/client';
+import { Style, Pet, PetPhoto, Format } from '@prisma/client';
 import { GenerationsService } from '../generations.service';
 import { StrategyRegistry } from '../pipeline/strategy.registry';
 import { QUEUE_NAMES, JOB_NAMES } from '../constants/queues.constants';
@@ -13,9 +13,11 @@ interface GenerateJobData {
 interface GenerationWithRelations {
   id: string;
   prompt: string | null;
+  metadata: { compatConstraints?: Record<string, any> } | null;
   style: Style;
   pet: Pet;
   petPhoto: PetPhoto | null;
+  format: Format | null;
 }
 
 @Processor(QUEUE_NAMES.IMAGE_GENERATION)
@@ -54,12 +56,18 @@ export class ImageGenerationProcessor extends WorkerHost {
 
       const strategy = this.strategyRegistry.get(generation.style.strategyKey);
 
+      const constraints: Record<string, any> = {
+        maxPets: 1,
+        ...(generation.metadata?.compatConstraints ?? {}),
+      };
+
       const result = await strategy.execute({
         generationId,
         petPhotoUrl,
         style: generation.style,
         pet: generation.pet,
-        userPrompt: generation.prompt ?? undefined,
+        format: generation.format,
+        constraints,
       });
 
       await this.generationsService.markCompleted(generationId, result);

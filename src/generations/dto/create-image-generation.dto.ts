@@ -53,13 +53,11 @@ export class CreateImageGenerationDto {
   @Max(2048)
   height?: number;
 
-  @ApiProperty({ description: 'Format ID (optional)' })
-  @IsOptional()
+  @ApiProperty({ description: 'Format ID' })
   @IsUUID()
-  formatId?: string;
+  formatId!: string;
 
-  @ApiProperty({ description: 'Product reference ID (optional)' })
-  @IsOptional()
+  @ApiProperty({ description: 'Product reference ID' })
   @IsUUID()
-  productRefId?: string;
+  productRefId!: string;
 }

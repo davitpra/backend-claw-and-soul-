@@ -1,11 +1,16 @@
-import { Style, Pet, PetPhoto } from '@prisma/client';
+import { Style, Pet, PetPhoto, Format } from '@prisma/client';
 
 export interface PipelineContext {
   generationId: string;
   petPhotoUrl: string;
   style: Style;
   pet: Pet;
-  userPrompt?: string;
+  format: Format | null;
+  constraints: {
+    maxPets?: number;
+    aspectRatio?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface PipelineResult {
@@ -15,6 +20,8 @@ export interface PipelineResult {
   resultUrl: string;
   resultStorageKey: string;
   processingTimeSeconds: number;
+  /** Frozen snapshot of the style template config used — for audit/reproducibility. */
+  promptSnapshot?: Record<string, any>;
 }
 
 export abstract class BaseStyleStrategy {

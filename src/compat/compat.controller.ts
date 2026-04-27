@@ -10,7 +10,9 @@ export class CompatController {
 
   @Public()
   @Get('formats')
-  @ApiOperation({ summary: 'Formats available for a product (Flujo 1, step 1)' })
+  @ApiOperation({
+    summary: 'Formats available for a product (Flujo 1, step 1)',
+  })
   @ApiQuery({ name: 'product_id', required: true, type: String })
   getFormatsByProduct(@Query('product_id') productId: string) {
     return this.compatService.getFormatsByProduct(productId);
@@ -18,7 +20,9 @@ export class CompatController {
 
   @Public()
   @Get('styles')
-  @ApiOperation({ summary: 'Styles compatible with product+format (Flujo 1, step 2)' })
+  @ApiOperation({
+    summary: 'Styles compatible with product+format (Flujo 1, step 2)',
+  })
   @ApiQuery({ name: 'product_id', required: true, type: String })
   @ApiQuery({ name: 'format_id', required: true, type: String })
   getStylesByProductAndFormat(
@@ -38,7 +42,9 @@ export class CompatController {
 
   @Public()
   @Get('products')
-  @ApiOperation({ summary: 'Products compatible with style+format (Flujo 2, step 2)' })
+  @ApiOperation({
+    summary: 'Products compatible with style+format (Flujo 2, step 2)',
+  })
   @ApiQuery({ name: 'style_id', required: true, type: String })
   @ApiQuery({ name: 'format_id', required: true, type: String })
   getProductsByStyleAndFormat(
@@ -50,7 +56,9 @@ export class CompatController {
 
   @Public()
   @Get('check')
-  @ApiOperation({ summary: 'Validate a style+format+product combination (both flows)' })
+  @ApiOperation({
+    summary: 'Validate a style+format+product combination (both flows)',
+  })
   @ApiQuery({ name: 'style_id', required: true, type: String })
   @ApiQuery({ name: 'format_id', required: true, type: String })
   @ApiQuery({ name: 'product_id', required: true, type: String })

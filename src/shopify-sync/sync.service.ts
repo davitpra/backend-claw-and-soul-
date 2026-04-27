@@ -31,7 +31,9 @@ export class SyncService implements OnApplicationBootstrap {
   async onApplicationBootstrap(): Promise<void> {
     const appPublicUrl = this.configService.get<string>('APP_PUBLIC_URL');
     if (!appPublicUrl) {
-      this.logger.warn('APP_PUBLIC_URL not set — skipping Shopify webhook registration');
+      this.logger.warn(
+        'APP_PUBLIC_URL not set — skipping Shopify webhook registration',
+      );
       return;
     }
     try {
@@ -125,7 +127,10 @@ export class SyncService implements OnApplicationBootstrap {
     };
   }
 
-  private async runFullSync(type: string, existingSyncId?: string): Promise<void> {
+  private async runFullSync(
+    type: string,
+    existingSyncId?: string,
+  ): Promise<void> {
     let syncId = existingSyncId;
 
     // For cron syncs, acquire mutex and create the sync log here
@@ -185,7 +190,8 @@ export class SyncService implements OnApplicationBootstrap {
       for (const { shopifyProductId } of activeDbProducts) {
         if (!shopifyIds.has(shopifyProductId)) {
           try {
-            const result = await this.productSyncService.softDeleteProduct(shopifyProductId);
+            const result =
+              await this.productSyncService.softDeleteProduct(shopifyProductId);
             if (result.action === 'deactivated') productsDeactivated++;
           } catch (err) {
             const msg = `Failed to deactivate product ${shopifyProductId}: ${(err as Error).message}`;

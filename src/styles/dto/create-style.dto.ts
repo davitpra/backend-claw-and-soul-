@@ -25,7 +25,10 @@ export class CreateStyleDto {
   @MaxLength(100)
   category: string;
 
-  @ApiProperty({ example: 'A classic watercolor painting style', required: false })
+  @ApiProperty({
+    example: 'A classic watercolor painting style',
+    required: false,
+  })
   @IsOptional()
   @IsString()
   description?: string;

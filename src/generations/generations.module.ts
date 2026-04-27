@@ -5,6 +5,7 @@ import { GenerationsController } from './generations.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PetsModule } from '../pets/pets.module';
 import { StylesModule } from '../styles/styles.module';
+import { CompatModule } from '../compat/compat.module';
 import { ImageGenerationProcessor } from './processors/image-generation.processor';
 import { QUEUE_NAMES } from './constants/queues.constants';
 
@@ -13,8 +14,7 @@ import { StrategyRegistry } from './pipeline/strategy.registry';
 import { DefaultStyleStrategy } from './pipeline/strategies/default.strategy';
 
 // Providers
-import { OpenAIVisionService } from './providers/vision/openai-vision.service';
-import { PromptBuilderService } from './providers/prompt/prompt-builder.service';
+import { OpenRouterPromptService } from './providers/openrouter/openrouter-prompt.service';
 import { FalService } from './providers/fal/fal.service';
 
 @Module({
@@ -22,6 +22,7 @@ import { FalService } from './providers/fal/fal.service';
     PrismaModule,
     PetsModule,
     StylesModule,
+    CompatModule,
     BullModule.registerQueue({ name: QUEUE_NAMES.IMAGE_GENERATION }),
   ],
   controllers: [GenerationsController],
@@ -32,8 +33,7 @@ import { FalService } from './providers/fal/fal.service';
     StrategyRegistry,
     DefaultStyleStrategy,
     // Providers
-    OpenAIVisionService,
-    PromptBuilderService,
+    OpenRouterPromptService,
     FalService,
   ],
   exports: [GenerationsService],

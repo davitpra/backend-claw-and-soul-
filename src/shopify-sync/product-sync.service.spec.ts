@@ -64,13 +64,16 @@ describe('ProductSyncService', () => {
             displayName: 'My Poster',
             description: 'desc',
             isActive: true,
-          }),
+          }) as unknown,
         }),
       );
     });
 
     it('updates an existing product', async () => {
-      mockPrisma.productReference.findUnique.mockResolvedValue({ id: 'ref-1', isActive: true });
+      mockPrisma.productReference.findUnique.mockResolvedValue({
+        id: 'ref-1',
+        isActive: true,
+      });
       mockPrisma.productReference.update.mockResolvedValue({});
       mockPrisma.auditLog.create.mockResolvedValue({});
 
@@ -95,19 +98,29 @@ describe('ProductSyncService', () => {
 
       const result = await service.syncVariants(
         'ref-1',
-        [{ id: 999, title: '8x10', option1: '8x10', option2: null, option3: null }],
+        [
+          {
+            id: 999,
+            title: '8x10',
+            option1: '8x10',
+            option2: null,
+            option3: null,
+          },
+        ],
         'my-poster',
       );
 
       expect(result).toEqual({ synced: 1, skipped: 0 });
       expect(mockPrisma.productFormatVariant.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { productRefId_formatId: { productRefId: 'ref-1', formatId: 'fmt-1' } },
+          where: {
+            productRefId_formatId: { productRefId: 'ref-1', formatId: 'fmt-1' },
+          },
           create: expect.objectContaining({
             shopifyVariantId: '999',
             shopifyVariantTitle: '8x10',
             isActive: true,
-          }),
+          }) as unknown,
         }),
       );
     });
@@ -118,7 +131,15 @@ describe('ProductSyncService', () => {
 
       const result = await service.syncVariants(
         'ref-1',
-        [{ id: 999, title: '12x16', option1: '12x16', option2: null, option3: null }],
+        [
+          {
+            id: 999,
+            title: '12x16',
+            option1: '12x16',
+            option2: null,
+            option3: null,
+          },
+        ],
         'my-poster',
       );
 
@@ -131,7 +152,15 @@ describe('ProductSyncService', () => {
 
       const result = await service.syncVariants(
         'ref-1',
-        [{ id: 999, title: 'Default Title', option1: null, option2: null, option3: null }],
+        [
+          {
+            id: 999,
+            title: 'Default Title',
+            option1: null,
+            option2: null,
+            option3: null,
+          },
+        ],
         'my-poster',
       );
 
@@ -146,7 +175,15 @@ describe('ProductSyncService', () => {
 
       await service.syncVariants(
         'ref-1',
-        [{ id: 100, title: '8x10', option1: '8x10', option2: null, option3: null }],
+        [
+          {
+            id: 100,
+            title: '8x10',
+            option1: '8x10',
+            option2: null,
+            option3: null,
+          },
+        ],
         'my-poster',
       );
 

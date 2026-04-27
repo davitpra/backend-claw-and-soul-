@@ -49,7 +49,10 @@ describe('CompatService', () => {
         { format: mockFormat, formatId: 'fmt-1' },
       ]);
       mockPrisma.productFormatVariant.findMany.mockResolvedValue([
-        { formatId: 'fmt-1', shopifyVariantId: 'gid://shopify/ProductVariant/12345' },
+        {
+          formatId: 'fmt-1',
+          shopifyVariantId: 'gid://shopify/ProductVariant/12345',
+        },
       ]);
 
       const result = await service.getFormatsByProduct('ref-1');
@@ -62,7 +65,11 @@ describe('CompatService', () => {
         },
       ]);
       expect(mockPrisma.productFormatVariant.findMany).toHaveBeenCalledWith({
-        where: { productRefId: 'ref-1', formatId: { in: ['fmt-1'] }, isActive: true },
+        where: {
+          productRefId: 'ref-1',
+          formatId: { in: ['fmt-1'] },
+          isActive: true,
+        },
         select: { formatId: true, shopifyVariantId: true },
       });
     });
@@ -124,7 +131,10 @@ describe('CompatService', () => {
 
       const result = await service.checkCompat('style-1', 'fmt-1', 'ref-1');
 
-      expect(result).toMatchObject({ compatible: true, shopifyVariantId: null });
+      expect(result).toMatchObject({
+        compatible: true,
+        shopifyVariantId: null,
+      });
     });
 
     it('returns shopifyVariantId null when no variant record exists', async () => {
@@ -137,7 +147,10 @@ describe('CompatService', () => {
 
       const result = await service.checkCompat('style-1', 'fmt-1', 'ref-1');
 
-      expect(result).toMatchObject({ compatible: true, shopifyVariantId: null });
+      expect(result).toMatchObject({
+        compatible: true,
+        shopifyVariantId: null,
+      });
     });
 
     it('returns compatible false when rule does not exist', async () => {

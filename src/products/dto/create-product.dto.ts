@@ -17,7 +17,10 @@ export class CreateProductDto {
   @MaxLength(150)
   displayName: string;
 
-  @ApiProperty({ example: 'A high-quality canvas print of your pet.', required: false })
+  @ApiProperty({
+    example: 'A high-quality canvas print of your pet.',
+    required: false,
+  })
   @IsOptional()
   @IsString()
   description?: string;

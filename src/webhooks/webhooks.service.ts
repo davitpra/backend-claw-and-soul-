@@ -15,12 +15,20 @@ export class WebhooksService {
 
     const data: Record<string, any> = {};
     if (fields.resultUrl !== undefined) data.resultUrl = fields.resultUrl;
-    if (fields.resultStorageKey !== undefined) data.resultStorageKey = fields.resultStorageKey;
-    if (fields.thumbnailUrl !== undefined) data.thumbnailUrl = fields.thumbnailUrl;
-    if (fields.errorMessage !== undefined) data.errorMessage = fields.errorMessage;
-    if (fields.processingTimeSeconds !== undefined) data.processingTimeSeconds = fields.processingTimeSeconds;
+    if (fields.resultStorageKey !== undefined)
+      data.resultStorageKey = fields.resultStorageKey;
+    if (fields.thumbnailUrl !== undefined)
+      data.thumbnailUrl = fields.thumbnailUrl;
+    if (fields.errorMessage !== undefined)
+      data.errorMessage = fields.errorMessage;
+    if (fields.processingTimeSeconds !== undefined)
+      data.processingTimeSeconds = fields.processingTimeSeconds;
     if (fields.metadata !== undefined) data.metadata = fields.metadata;
 
-    return this.generationsService.updateGenerationStatus(generationId, status, data);
+    return this.generationsService.updateGenerationStatus(
+      generationId,
+      status,
+      data,
+    );
   }
 }

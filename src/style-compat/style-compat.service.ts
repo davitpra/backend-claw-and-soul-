@@ -6,7 +6,9 @@ export class StyleCompatService {
   constructor(private prisma: PrismaService) {}
 
   async findCompatibleOptions(styleId: string) {
-    const style = await this.prisma.style.findUnique({ where: { id: styleId } });
+    const style = await this.prisma.style.findUnique({
+      where: { id: styleId },
+    });
     if (!style) {
       throw new NotFoundException(`Style ${styleId} not found`);
     }

@@ -42,7 +42,6 @@
     "class-validator": "^0.14.1",
     "cloudinary": "^2.9.0",
     "cookie-parser": "^1.4.7",
-    "openai": "^6.34.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",

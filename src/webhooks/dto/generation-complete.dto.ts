@@ -23,7 +23,10 @@ export class GenerationCompleteDto {
   @IsString()
   resultUrl?: string;
 
-  @ApiProperty({ description: 'Storage key for the result file', required: false })
+  @ApiProperty({
+    description: 'Storage key for the result file',
+    required: false,
+  })
   @IsOptional()
   @IsString()
   resultStorageKey?: string;

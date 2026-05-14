@@ -13,10 +13,9 @@ export class StylesService {
     private storageService: StorageService,
   ) {}
 
-  async findAll(category?: string, isPremium?: boolean) {
+  async findAll(category?: string) {
     const where: Prisma.StyleWhereInput = { isActive: true };
     if (category) where.category = category;
-    if (isPremium !== undefined) where.isPremium = isPremium;
 
     return this.prisma.style.findMany({
       where,

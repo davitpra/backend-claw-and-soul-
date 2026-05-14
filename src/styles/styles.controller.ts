@@ -12,16 +12,9 @@ export class StylesController {
   @Get()
   @ApiOperation({ summary: 'Get all active styles' })
   @ApiQuery({ name: 'category', required: false, type: String })
-  @ApiQuery({ name: 'is_premium', required: false, type: Boolean })
   @ApiResponse({ status: 200, description: 'Styles retrieved successfully' })
-  findAll(
-    @Query('category') category?: string,
-    @Query('is_premium') isPremium?: string,
-  ) {
-    return this.stylesService.findAll(
-      category,
-      isPremium === 'true' ? true : isPremium === 'false' ? false : undefined,
-    );
+  findAll(@Query('category') category?: string) {
+    return this.stylesService.findAll(category);
   }
 
   @Public()

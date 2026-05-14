@@ -20,7 +20,6 @@ async function main() {
       description:
         'Retrato artístico en acuarela con colores suaves y transparentes. Ideal para capturar la personalidad de tu mascota con un toque artesanal.',
       category: 'classic',
-      isPremium: false,
       sortOrder: 1,
       parameters: {
         model: 'stable-diffusion-xl',
@@ -37,7 +36,6 @@ async function main() {
       description:
         'Estética neón vibrante con fondo oscuro y detalles luminosos. Un retrato cyberpunk único que hará destacar a tu mascota.',
       category: 'modern',
-      isPremium: true,
       sortOrder: 5,
       parameters: {
         model: 'stable-diffusion-xl',
@@ -54,7 +52,6 @@ async function main() {
       description:
         'A clean digital style using flat colors, simple geometric shapes, minimal shadows, and stylized figures. Bold, limited palettes with no gradients or realistic textures. ',
       category: 'elegant',
-      isPremium: false,
       sortOrder: 12,
       parameters: {
         model: 'stable-diffusion-xl',
@@ -78,7 +75,6 @@ async function main() {
         displayName: styleData.displayName,
         description: styleData.description,
         category: styleData.category,
-        isPremium: styleData.isPremium,
         sortOrder: styleData.sortOrder,
         parameters: styleData.parameters,
         isActive: true,

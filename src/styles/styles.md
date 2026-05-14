@@ -14,7 +14,7 @@ Manages the available artistic styles for AI generation, including categorizatio
 
 | Method | Endpoint                         | Query Params                          | Description                                      | Auth   |
 | :----- | :------------------------------- | :------------------------------------ | :----------------------------------------------- | :----- |
-| `GET`  | `/api/styles`                    | `?category=string&is_premium=boolean` | List all active styles (filterable).             | Public |
+| `GET`  | `/api/styles`                    | `?category=string`                    | List all active styles (filterable).             | Public |
 | `GET`  | `/api/styles/categories`         | —                                     | Retrieve all available style categories.         | Public |
 | `GET`  | `/api/styles/category/:category` | —                                     | Fetch styles filtered by a specific category.    | Public |
 | `GET`  | `/api/styles/:id`                | —                                     | Get full details for a style (includes images).  | Public |
@@ -25,7 +25,7 @@ Manages the available artistic styles for AI generation, including categorizatio
 | Method   | Endpoint                                    | Body / Params                                       | Description                        |
 | :------- | :------------------------------------------ | :-------------------------------------------------- | :--------------------------------- |
 | `POST`   | `/api/admin/styles`                         | `{ name, display_name, category, parameters, ... }` | Create a new style.                |
-| `PATCH`  | `/api/admin/styles/:styleId`                | `{ display_name, parameters, is_premium, ... }`     | Partially update a style.          |
+| `PATCH`  | `/api/admin/styles/:styleId`                | `{ display_name, parameters, ... }`                 | Partially update a style.          |
 | `DELETE` | `/api/admin/styles/:styleId`                | —                                                   | Soft delete (sets `isActive=false`). |
 | `POST`   | `/api/admin/styles/:styleId/images`         | `multipart/form-data: file, caption?, order_index?` | Upload an image to the catalog.    |
 | `DELETE` | `/api/admin/styles/:styleId/images/:imgId`  | —                                                   | Delete an image from the catalog.  |
@@ -36,7 +36,6 @@ Manages the available artistic styles for AI generation, including categorizatio
 
 - **Public Access**: Read endpoints are public — users can browse styles before signing up.
 - **Categorization**: Filter by category via query param or dedicated route.
-- **Premium Tiers**: Styles can be flagged as premium; filterable via `?is_premium=true|false`.
 - **Active Status**: Only `isActive=true` styles appear in public endpoints. Soft delete sets `isActive=false`.
 - **Image Catalog**: Each style has an ordered image collection. Primary images filterable via `?is_primary=true`.
 - **Cloudinary Storage**: Style images are uploaded to Cloudinary; `storageKey` is the Cloudinary public_id used for deletion.

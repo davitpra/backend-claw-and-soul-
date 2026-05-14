@@ -106,8 +106,8 @@ model Style {
   description String?
   category    String
   previewUrl  String?  @map("preview_url")
+  thanksUrl   String?  @map("thanks_url")
   isActive    Boolean  @default(true) @map("is_active")
-  isPremium   Boolean  @default(false) @map("is_premium")
   parameters  Json?
   sortOrder   Int      @default(0) @map("sort_order")
   createdAt   DateTime @default(now()) @map("created_at")

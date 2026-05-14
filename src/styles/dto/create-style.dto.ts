@@ -2,7 +2,6 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsString,
   IsOptional,
-  IsBoolean,
   IsInt,
   IsObject,
   MaxLength,
@@ -33,10 +32,13 @@ export class CreateStyleDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ example: false, required: false })
+  @ApiProperty({
+    example: 'https://cdn.example.com/thanks/watercolor.jpg',
+    required: false,
+  })
   @IsOptional()
-  @IsBoolean()
-  isPremium?: boolean;
+  @IsString()
+  thanksUrl?: string;
 
   @ApiProperty({ example: { steps: 30, cfg_scale: 7 }, required: false })
   @IsOptional()

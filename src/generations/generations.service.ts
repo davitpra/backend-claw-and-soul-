@@ -41,6 +41,19 @@ export class GenerationsService {
       throw new BadRequestException('Pet does not belong to user');
     }
 
+    // Validate pet photo belongs to pet and has a URL
+    const petPhoto = await this.prisma.petPhoto.findUnique({
+      where: { id: createDto.petPhotoId },
+    });
+    if (!petPhoto || petPhoto.petId !== createDto.petId) {
+      throw new BadRequestException(
+        'Pet photo not found or does not belong to pet',
+      );
+    }
+    if (!petPhoto.photoUrl) {
+      throw new BadRequestException('Pet photo has no URL');
+    }
+
     // Validate style exists
     await this.stylesService.findOne(createDto.styleId);
 

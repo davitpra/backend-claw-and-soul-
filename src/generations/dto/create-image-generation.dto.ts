@@ -14,10 +14,9 @@ export class CreateImageGenerationDto {
   @IsUUID()
   petId!: string;
 
-  @ApiProperty({ description: 'Pet photo ID (optional)' })
-  @IsOptional()
+  @ApiProperty({ description: 'Pet photo ID' })
   @IsUUID()
-  petPhotoId?: string;
+  petPhotoId!: string;
 
   @ApiProperty({ description: 'Style ID' })
   @IsUUID()

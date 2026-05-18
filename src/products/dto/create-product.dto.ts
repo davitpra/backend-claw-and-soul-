@@ -25,7 +25,10 @@ export class CreateProductDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: 'Style UUID to fix to this product', required: false })
+  @ApiProperty({
+    description: 'Style UUID to fix to this product',
+    required: false,
+  })
   @IsOptional()
   @IsUUID()
   styleId?: string;

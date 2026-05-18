@@ -214,9 +214,27 @@ describe('ProductSyncService', () => {
       const result = await service.syncVariants(
         'ref-1',
         [
-          { id: 1, title: '8x10 / Black', option1: '8x10', option2: 'Black', option3: null },
-          { id: 2, title: '8x10 / White', option1: '8x10', option2: 'White', option3: null },
-          { id: 3, title: '8x10 / Oak',   option1: '8x10', option2: 'Oak',   option3: null },
+          {
+            id: 1,
+            title: '8x10 / Black',
+            option1: '8x10',
+            option2: 'Black',
+            option3: null,
+          },
+          {
+            id: 2,
+            title: '8x10 / White',
+            option1: '8x10',
+            option2: 'White',
+            option3: null,
+          },
+          {
+            id: 3,
+            title: '8x10 / Oak',
+            option1: '8x10',
+            option2: 'Oak',
+            option3: null,
+          },
         ],
         'my-poster',
       );
@@ -228,22 +246,34 @@ describe('ProductSyncService', () => {
       expect(mockPrisma.productFormatVariant.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            productRefId_shopifyVariantId: { productRefId: 'ref-1', shopifyVariantId: '1' },
+            productRefId_shopifyVariantId: {
+              productRefId: 'ref-1',
+              shopifyVariantId: '1',
+            },
           },
-          create: expect.objectContaining({ shopifyVariantId: '1', formatId: 'fmt-1' }) as unknown,
+          create: expect.objectContaining({
+            shopifyVariantId: '1',
+            formatId: 'fmt-1',
+          }) as unknown,
         }),
       );
       expect(mockPrisma.productFormatVariant.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            productRefId_shopifyVariantId: { productRefId: 'ref-1', shopifyVariantId: '2' },
+            productRefId_shopifyVariantId: {
+              productRefId: 'ref-1',
+              shopifyVariantId: '2',
+            },
           },
         }),
       );
       expect(mockPrisma.productFormatVariant.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            productRefId_shopifyVariantId: { productRefId: 'ref-1', shopifyVariantId: '3' },
+            productRefId_shopifyVariantId: {
+              productRefId: 'ref-1',
+              shopifyVariantId: '3',
+            },
           },
         }),
       );

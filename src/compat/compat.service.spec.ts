@@ -94,7 +94,10 @@ describe('CompatService', () => {
         style: mockStyle,
       });
 
-      const result = await service.getStylesByProductAndFormat('ref-1', 'fmt-1');
+      const result = await service.getStylesByProductAndFormat(
+        'ref-1',
+        'fmt-1',
+      );
 
       expect(result).toEqual([mockStyle]);
     });
@@ -106,7 +109,10 @@ describe('CompatService', () => {
         style: null,
       });
 
-      const result = await service.getStylesByProductAndFormat('ref-1', 'fmt-1');
+      const result = await service.getStylesByProductAndFormat(
+        'ref-1',
+        'fmt-1',
+      );
 
       expect(result).toEqual([]);
     });

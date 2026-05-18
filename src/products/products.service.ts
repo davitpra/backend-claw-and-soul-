@@ -7,11 +7,47 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { derivePreviewUrl } from '../styles/style-preview.util';
 
 const PRODUCT_INCLUDE = {
-  style: { select: { id: true, name: true, displayName: true, previewUrl: true } },
+  style: {
+    select: {
+      id: true,
+      name: true,
+      displayName: true,
+      images: {
+        where: { isPrimary: true },
+        take: 1,
+        select: { imageUrl: true, isPrimary: true },
+      },
+    },
+  },
   productType: { select: { id: true, name: true, displayName: true } },
 };
+
+type WithStylePreview<
+  T extends {
+    style: { images: { imageUrl: string; isPrimary: boolean }[] } | null;
+  },
+> = Omit<T, 'style'> & {
+  style:
+    | (Omit<NonNullable<T['style']>, 'images'> & { previewUrl: string | null })
+    | null;
+};
+
+function addStylePreview<
+  T extends {
+    style: { images: { imageUrl: string; isPrimary: boolean }[] } | null;
+  },
+>(product: T): WithStylePreview<T> {
+  if (!product.style)
+    return { ...product, style: null } as unknown as WithStylePreview<T>;
+  const { images, ...rest } = product.style;
+  return {
+    ...product,
+    style: { ...rest, previewUrl: derivePreviewUrl(images) },
+  } as unknown as WithStylePreview<T>;
+}
 
 function toShopifyVariantGid(id: string): string {
   if (id.startsWith('gid://')) return id;
@@ -22,20 +58,22 @@ function toShopifyVariantGid(id: string): string {
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
-  findAll() {
-    return this.prisma.productReference.findMany({
+  async findAll() {
+    const rows = await this.prisma.productReference.findMany({
       where: { isActive: true },
       include: PRODUCT_INCLUDE,
       orderBy: { name: 'asc' },
     });
+    return rows.map(addStylePreview);
   }
 
-  findPendingStyleAssignment() {
-    return this.prisma.productReference.findMany({
+  async findPendingStyleAssignment() {
+    const rows = await this.prisma.productReference.findMany({
       where: { isActive: true, styleId: null },
       include: PRODUCT_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map(addStylePreview);
   }
 
   async findByHandleWithVariants(handle: string) {
@@ -62,6 +100,8 @@ export class ProductsService {
       if (!seenFormats.has(v.format.id)) seenFormats.set(v.format.id, v);
     }
 
+    const mapped = addStylePreview(product);
+
     return {
       productRefId: product.id,
       shopifyProductId: product.shopifyProductId,
@@ -69,7 +109,7 @@ export class ProductsService {
       name: product.name,
       displayName: product.displayName,
       description: product.description,
-      style: product.style,
+      style: mapped.style,
       productType: product.productType,
       variants: [...seenFormats.values()].map((v) => ({
         shopifyVariantId: toShopifyVariantGid(v.shopifyVariantId),
@@ -94,15 +134,16 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
 
-    return product;
+    return addStylePreview(product);
   }
 
   async create(dto: CreateProductDto) {
     try {
-      return await this.prisma.productReference.create({
+      const row = await this.prisma.productReference.create({
         data: dto,
         include: PRODUCT_INCLUDE,
       });
+      return addStylePreview(row);
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -120,11 +161,12 @@ export class ProductsService {
     await this.findOne(id);
 
     try {
-      return await this.prisma.productReference.update({
+      const row = await this.prisma.productReference.update({
         where: { id },
         data: dto,
         include: PRODUCT_INCLUDE,
       });
+      return addStylePreview(row);
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

@@ -26,6 +26,7 @@ import {
 import { StylesService } from './styles.service';
 import { CreateStyleDto } from './dto/create-style.dto';
 import { UpdateStyleDto } from './dto/update-style.dto';
+import { UpdateStyleImageDto } from './dto/update-style-image.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 
@@ -94,6 +95,18 @@ export class AdminStylesController {
     }
 
     return this.stylesService.addImage(styleId, file, caption, orderIndex);
+  }
+
+  @Patch(':styleId/images/:imgId')
+  @ApiOperation({ summary: 'Update a style image (set primary / reorder)' })
+  @ApiResponse({ status: 200, description: 'Image updated successfully' })
+  @ApiResponse({ status: 404, description: 'Style image not found' })
+  updateImage(
+    @Param('styleId') styleId: string,
+    @Param('imgId') imgId: string,
+    @Body() dto: UpdateStyleImageDto,
+  ) {
+    return this.stylesService.updateImage(styleId, imgId, dto);
   }
 
   @Delete(':styleId/images/:imgId')

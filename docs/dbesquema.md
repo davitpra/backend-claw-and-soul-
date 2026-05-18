@@ -95,7 +95,6 @@ name varchar [not null, unique]
 display_name varchar [not null]
 description text
 category varchar [not null, note: 'Familia artística: classic, modern, elegant, etc.']
-preview_url varchar
 thanks_url varchar
 is_active boolean
 parameters json
@@ -135,6 +134,7 @@ created_at timestamp
 indexes {
 style_id
 (style_id, order_index)
+(style_id, is_primary)
 }
 }
 

@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { derivePreviewUrl } from '../styles/style-preview.util';
 
 const STYLE_INCLUDE = {
   images: {
     where: { isPrimary: true },
     take: 1,
-    select: { imageUrl: true },
+    select: { imageUrl: true, isPrimary: true },
   },
 };
 
@@ -40,7 +41,10 @@ export class CompatService {
     if (!product) throw new NotFoundException(`Product ${productId} not found`);
     if (!product.style) return [];
 
-    return [product.style].sort((a, b) => a.sortOrder - b.sortOrder);
+    const { images, ...styleRest } = product.style;
+    const style = { ...styleRest, previewUrl: derivePreviewUrl(images) };
+
+    return [style].sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
   // --- Flujo 2: estilo → formatos disponibles ---

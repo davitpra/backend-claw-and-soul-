@@ -105,7 +105,6 @@ model Style {
   displayName String   @map("display_name")
   description String?
   category    String
-  previewUrl  String?  @map("preview_url")
   thanksUrl   String?  @map("thanks_url")
   isActive    Boolean  @default(true) @map("is_active")
   parameters  Json?
@@ -147,6 +146,7 @@ model StyleImage {
 
   @@index([styleId])
   @@index([styleId, orderIndex])
+  @@index([styleId, isPrimary])
   @@map("style_images")
 }
 

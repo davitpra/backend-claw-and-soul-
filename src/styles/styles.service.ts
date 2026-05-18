@@ -5,6 +5,8 @@ import { StorageService } from '../storage/storage.service';
 import { v4 as uuidv4 } from 'uuid';
 import { CreateStyleDto } from './dto/create-style.dto';
 import { UpdateStyleDto } from './dto/update-style.dto';
+import { UpdateStyleImageDto } from './dto/update-style-image.dto';
+import { derivePreviewUrl } from './style-preview.util';
 
 @Injectable()
 export class StylesService {
@@ -17,13 +19,18 @@ export class StylesService {
     const where: Prisma.StyleWhereInput = { isActive: true };
     if (category) where.category = category;
 
-    return this.prisma.style.findMany({
+    const styles = await this.prisma.style.findMany({
       where,
       orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
       include: {
         images: { orderBy: { orderIndex: 'asc' } },
       },
     });
+
+    return styles.map((s) => ({
+      ...s,
+      previewUrl: derivePreviewUrl(s.images),
+    }));
   }
 
   async findOne(id: string) {
@@ -38,14 +45,20 @@ export class StylesService {
       throw new NotFoundException('Style not found');
     }
 
-    return style;
+    return { ...style, previewUrl: derivePreviewUrl(style.images) };
   }
 
   async findByCategory(category: string) {
-    return this.prisma.style.findMany({
+    const styles = await this.prisma.style.findMany({
       where: { category, isActive: true },
       orderBy: { sortOrder: 'asc' },
+      include: { images: { orderBy: { orderIndex: 'asc' } } },
     });
+
+    return styles.map((s) => ({
+      ...s,
+      previewUrl: derivePreviewUrl(s.images),
+    }));
   }
 
   async getStyleImages(styleId: string, isPrimary?: boolean) {
@@ -102,6 +115,31 @@ export class StylesService {
         storageKey: key,
         caption,
         orderIndex: orderIndex ?? 0,
+      },
+    });
+  }
+
+  async updateImage(styleId: string, imgId: string, dto: UpdateStyleImageDto) {
+    const image = await this.prisma.styleImage.findFirst({
+      where: { id: imgId, styleId },
+    });
+
+    if (!image) {
+      throw new NotFoundException('Style image not found');
+    }
+
+    if (dto.isPrimary === true) {
+      await this.prisma.styleImage.updateMany({
+        where: { styleId },
+        data: { isPrimary: false },
+      });
+    }
+
+    return this.prisma.styleImage.update({
+      where: { id: imgId },
+      data: {
+        ...(dto.isPrimary !== undefined && { isPrimary: dto.isPrimary }),
+        ...(dto.orderIndex !== undefined && { orderIndex: dto.orderIndex }),
       },
     });
   }

@@ -13,33 +13,29 @@ export class StyleCompatService {
       throw new NotFoundException(`Style ${styleId} not found`);
     }
 
-    const entries = await this.prisma.styleFormatProductCompat.findMany({
+    // Products that carry this style, with their available format variants
+    const products = await this.prisma.productReference.findMany({
       where: { styleId, isActive: true },
       include: {
-        format: true,
-        productRef: true,
+        productVariants: {
+          where: { isActive: true },
+          include: { format: true },
+        },
       },
-      orderBy: [{ formatId: 'asc' }, { productRefId: 'asc' }],
     });
 
-    const formatsMap = new Map<string, (typeof entries)[0]['format']>();
-    const productRefsMap = new Map<string, (typeof entries)[0]['productRef']>();
-
-    for (const entry of entries) {
-      formatsMap.set(entry.format.id, entry.format);
-      productRefsMap.set(entry.productRef.id, entry.productRef);
+    // Deduplicate formats across all products
+    const formatsMap = new Map<string, object>();
+    for (const product of products) {
+      for (const variant of product.productVariants) {
+        formatsMap.set(variant.format.id, variant.format);
+      }
     }
 
     return {
       styleId,
       formats: Array.from(formatsMap.values()),
-      productReferences: Array.from(productRefsMap.values()),
-      compatMatrix: entries.map((e) => ({
-        id: e.id,
-        formatId: e.formatId,
-        productRefId: e.productRefId,
-        constraints: e.constraints,
-      })),
+      productReferences: products.map(({ productVariants: _v, ...p }) => p),
     };
   }
 }

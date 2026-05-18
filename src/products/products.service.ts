@@ -8,6 +8,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
+const PRODUCT_INCLUDE = {
+  style: { select: { id: true, name: true, displayName: true, previewUrl: true } },
+  productType: { select: { id: true, name: true, displayName: true } },
+};
+
 function toShopifyVariantGid(id: string): string {
   if (id.startsWith('gid://')) return id;
   return `gid://shopify/ProductVariant/${id}`;
@@ -20,7 +25,16 @@ export class ProductsService {
   findAll() {
     return this.prisma.productReference.findMany({
       where: { isActive: true },
+      include: PRODUCT_INCLUDE,
       orderBy: { name: 'asc' },
+    });
+  }
+
+  findPendingStyleAssignment() {
+    return this.prisma.productReference.findMany({
+      where: { isActive: true, styleId: null },
+      include: PRODUCT_INCLUDE,
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -28,6 +42,7 @@ export class ProductsService {
     const product = await this.prisma.productReference.findFirst({
       where: { shopifyHandle: handle, isActive: true },
       include: {
+        ...PRODUCT_INCLUDE,
         productVariants: {
           where: { isActive: true },
           include: { format: true },
@@ -39,6 +54,14 @@ export class ProductsService {
       throw new NotFoundException(`Product with handle '${handle}' not found`);
     }
 
+    // Deduplicate by formatId — multiple Shopify variants may share the same size.
+    // The IA-generator only needs one entry per format; exposing all variants per
+    // format is deferred to the future secondary-option UI work.
+    const seenFormats = new Map<string, (typeof product.productVariants)[0]>();
+    for (const v of product.productVariants) {
+      if (!seenFormats.has(v.format.id)) seenFormats.set(v.format.id, v);
+    }
+
     return {
       productRefId: product.id,
       shopifyProductId: product.shopifyProductId,
@@ -46,7 +69,9 @@ export class ProductsService {
       name: product.name,
       displayName: product.displayName,
       description: product.description,
-      variants: product.productVariants.map((v) => ({
+      style: product.style,
+      productType: product.productType,
+      variants: [...seenFormats.values()].map((v) => ({
         shopifyVariantId: toShopifyVariantGid(v.shopifyVariantId),
         shopifyVariantTitle: v.shopifyVariantTitle,
         formatId: v.format.id,
@@ -62,6 +87,7 @@ export class ProductsService {
   async findOne(id: string) {
     const product = await this.prisma.productReference.findUnique({
       where: { id },
+      include: PRODUCT_INCLUDE,
     });
 
     if (!product) {
@@ -73,7 +99,10 @@ export class ProductsService {
 
   async create(dto: CreateProductDto) {
     try {
-      return await this.prisma.productReference.create({ data: dto });
+      return await this.prisma.productReference.create({
+        data: dto,
+        include: PRODUCT_INCLUDE,
+      });
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -94,6 +123,7 @@ export class ProductsService {
       return await this.prisma.productReference.update({
         where: { id },
         data: dto,
+        include: PRODUCT_INCLUDE,
       });
     } catch (error) {
       if (

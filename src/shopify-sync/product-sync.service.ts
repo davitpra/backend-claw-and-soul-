@@ -58,9 +58,9 @@ export class ProductSyncService {
     let skipped = 0;
 
     const incomingVariantIds = variants.map((v) => String(v.id));
+    const formatCache = new Map<string, { id: string }>();
 
     for (const variant of variants) {
-      // Extract the Size option (option1 is typically "Size" for print products)
       const sizeValue = variant.option1?.trim();
 
       if (!sizeValue) {
@@ -71,29 +71,36 @@ export class ProductSyncService {
         continue;
       }
 
-      const format = await this.prisma.format.findFirst({
-        where: { shopifyVariantOption: sizeValue },
-      });
-
+      let format = formatCache.get(sizeValue);
       if (!format) {
-        this.logger.warn(
-          `Variant '${sizeValue}' of product '${productName}' has no configured format — skipping`,
-        );
-        skipped++;
-        continue;
+        const found = await this.prisma.format.findFirst({
+          where: { shopifyVariantOption: sizeValue },
+        });
+        if (!found) {
+          this.logger.warn(
+            `Variant '${sizeValue}' of product '${productName}' has no configured format — skipping`,
+          );
+          skipped++;
+          continue;
+        }
+        formatCache.set(sizeValue, found);
+        format = found;
       }
 
+      const shopifyVariantId = String(variant.id);
       await this.prisma.productFormatVariant.upsert({
-        where: { productRefId_formatId: { productRefId, formatId: format.id } },
+        where: {
+          productRefId_shopifyVariantId: { productRefId, shopifyVariantId },
+        },
         create: {
           productRefId,
           formatId: format.id,
-          shopifyVariantId: String(variant.id),
+          shopifyVariantId,
           shopifyVariantTitle: variant.title,
           isActive: true,
         },
         update: {
-          shopifyVariantId: String(variant.id),
+          formatId: format.id,
           shopifyVariantTitle: variant.title,
           isActive: true,
         },
@@ -126,16 +133,9 @@ export class ProductSyncService {
       return { action: 'not_found' };
     }
 
-    // Soft-delete product and cascade to compat matrix in a single transaction.
-    // Note: onDelete:Cascade in schema is a hard-delete cascade, not soft-delete,
-    // so we must handle the compat deactivation manually here.
     await this.prisma.$transaction([
       this.prisma.productReference.update({
         where: { id: existing.id },
-        data: { isActive: false },
-      }),
-      this.prisma.styleFormatProductCompat.updateMany({
-        where: { productRefId: existing.id },
         data: { isActive: false },
       }),
       this.prisma.productFormatVariant.updateMany({

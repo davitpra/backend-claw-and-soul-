@@ -18,10 +18,6 @@ export class CreateImageGenerationDto {
   @IsUUID()
   petPhotoId!: string;
 
-  @ApiProperty({ description: 'Style ID' })
-  @IsUUID()
-  styleId!: string;
-
   @ApiProperty({ description: 'Custom prompt (optional)' })
   @IsOptional()
   @IsString()

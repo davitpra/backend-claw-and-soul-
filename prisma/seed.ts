@@ -9,6 +9,31 @@ async function main() {
   // service, not by this seed. Do not add them here.
 
   // ============================================
+  // PRODUCT TYPES
+  // ============================================
+  console.log('📦 Creating product types...');
+
+  const productTypesData = [
+    { name: 'poster', displayName: 'Póster' },
+    { name: 'canvas', displayName: 'Lienzo' },
+    { name: 'mug', displayName: 'Taza' },
+    { name: 'tshirt', displayName: 'Camiseta' },
+    { name: 'sticker', displayName: 'Sticker' },
+  ];
+
+  let productTypeCount = 0;
+  for (const pt of productTypesData) {
+    await prisma.productType.upsert({
+      where: { name: pt.name },
+      update: {},
+      create: { name: pt.name, displayName: pt.displayName, isActive: true },
+    });
+    productTypeCount++;
+  }
+
+  console.log(`  ✓ ${productTypeCount} product types upserted`);
+
+  // ============================================
   // STYLES
   // ============================================
   console.log('🎨 Creating styles...');
@@ -86,52 +111,100 @@ async function main() {
   console.log(`  ✓ ${Object.keys(createdStyles).length} styles upserted`);
 
   // ============================================
-  // COMPATIBILITY MATRIX
+  // PRODUCT FORMAT VARIANT CONSTRAINTS
   // ============================================
-  console.log('🔗 Creating compatibility matrix...');
+  // Sets per-(product, format) generation overrides on existing variants created
+  // by the Shopify sync. Safe to re-run: updateMany is idempotent.
+  //
+  // cropMode  → framing hint for the AI prompt ('head-shoulders' | 'portrait' | 'full-body')
+  // maxPets   → max number of pets allowed in the composition
+  // bleedMm   → extra canvas wrap bleed required for print (canvas products only)
+  console.log('🖼️  Seeding product format variant constraints...');
 
-  // Derived dynamically from active styles and real ProductFormatVariants so
-  // this stays in sync when Shopify sync adds/removes products or formats.
-  const activeStyles = await prisma.style.findMany({ where: { isActive: true } });
-  const activeVariants = await prisma.productFormatVariant.findMany({
-    where: { isActive: true },
-    select: { formatId: true, productRefId: true },
-  });
+  const variantConstraints: {
+    productHandle: string;
+    formatName: string;
+    constraints: Record<string, unknown>;
+  }[] = [
+    // ── Photo Paper Poster ──────────────────────────────────────────
+    { productHandle: 'photo-paper-poster', formatName: 'portrait_8x10',
+      constraints: { cropMode: 'head-shoulders', maxPets: 1 } },
+    { productHandle: 'photo-paper-poster', formatName: 'portrait_12x16',
+      constraints: { cropMode: 'head-shoulders', maxPets: 1 } },
+    { productHandle: 'photo-paper-poster', formatName: 'portrait_16x20',
+      constraints: { cropMode: 'portrait', maxPets: 1 } },
+    { productHandle: 'photo-paper-poster', formatName: 'portrait_18x24',
+      constraints: { cropMode: 'portrait', maxPets: 1 } },
+    { productHandle: 'photo-paper-poster', formatName: 'portrait_20x30',
+      constraints: { cropMode: 'full-body', maxPets: 2 } },
+    { productHandle: 'photo-paper-poster', formatName: 'portrait_24x36',
+      constraints: { cropMode: 'full-body', maxPets: 2 } },
 
-  // Deduplicate (formatId, productRefId) pairs
-  const uniquePairs = Array.from(
-    new Map(activeVariants.map((v) => [`${v.formatId}:${v.productRefId}`, v])).values(),
-  );
+    // ── Framed Poster ───────────────────────────────────────────────
+    { productHandle: 'framed-poster', formatName: 'portrait_12x16',
+      constraints: { cropMode: 'head-shoulders', maxPets: 1 } },
+    { productHandle: 'framed-poster', formatName: 'portrait_16x20',
+      constraints: { cropMode: 'portrait', maxPets: 1 } },
+    { productHandle: 'framed-poster', formatName: 'portrait_24x36',
+      constraints: { cropMode: 'full-body', maxPets: 2 } },
 
-  let compatCount = 0;
-  for (const style of activeStyles) {
-    for (const { formatId, productRefId } of uniquePairs) {
-      await prisma.styleFormatProductCompat.upsert({
-        where: {
-          styleId_formatId_productRefId: {
-            styleId: style.id,
-            formatId,
-            productRefId,
-          },
-        },
-        update: {},
-        create: {
-          styleId: style.id,
-          formatId,
-          productRefId,
-          constraints: Prisma.JsonNull,
-          isActive: true,
-        },
-      });
-      compatCount++;
+    // ── Museum-Quality Wooden Framed Poster ─────────────────────────
+    { productHandle: 'museum-quality-matte-paper-wooden-framed-poster', formatName: 'museum_20x25',
+      constraints: { cropMode: 'portrait', maxPets: 1 } },
+    { productHandle: 'museum-quality-matte-paper-wooden-framed-poster', formatName: 'museum_30x45',
+      constraints: { cropMode: 'full-body', maxPets: 2 } },
+    { productHandle: 'museum-quality-matte-paper-wooden-framed-poster', formatName: 'museum_40x50',
+      constraints: { cropMode: 'portrait', maxPets: 1 } },
+
+    // ── Framed Canvas (bleedMm for canvas wrap edges) ───────────────
+    { productHandle: 'framed-canvas', formatName: 'portrait_16x20',
+      constraints: { cropMode: 'portrait', maxPets: 1, bleedMm: 25 } },
+    { productHandle: 'framed-canvas', formatName: 'portrait_18x24',
+      constraints: { cropMode: 'portrait', maxPets: 1, bleedMm: 25 } },
+    { productHandle: 'framed-canvas', formatName: 'portrait_24x32',
+      constraints: { cropMode: 'full-body', maxPets: 1, bleedMm: 25 } },
+  ];
+
+  let constraintsUpdated = 0;
+  let constraintsSkipped = 0;
+
+  for (const entry of variantConstraints) {
+    const product = await prisma.productReference.findFirst({
+      where: { shopifyHandle: entry.productHandle },
+    });
+    const format = await prisma.format.findFirst({
+      where: { name: entry.formatName },
+    });
+
+    if (!product || !format) {
+      console.warn(
+        `  ⚠ Skipping constraints for ${entry.productHandle}/${entry.formatName}: product or format not found`,
+      );
+      constraintsSkipped++;
+      continue;
+    }
+
+    const result = await prisma.productFormatVariant.updateMany({
+      where: { productRefId: product.id, formatId: format.id },
+      data: { constraints: entry.constraints as Prisma.InputJsonValue },
+    });
+
+    if (result.count === 0) {
+      console.warn(
+        `  ⚠ No variant found for ${entry.productHandle}/${entry.formatName}`,
+      );
+      constraintsSkipped++;
+    } else {
+      constraintsUpdated++;
     }
   }
 
-  console.log(`  ✓ ${compatCount} compatibility entries upserted`);
+  console.log(`  ✓ ${constraintsUpdated} variant constraints updated (${constraintsSkipped} skipped)`);
 
   console.log('\n✅ Seeding completed successfully!');
+  console.log(`   - Product types: ${productTypeCount}`);
   console.log(`   - Styles: ${Object.keys(createdStyles).length}`);
-  console.log(`   - Compat entries: ${compatCount}`);
+  console.log(`   - Variant constraints: ${constraintsUpdated} updated`);
 }
 
 main()

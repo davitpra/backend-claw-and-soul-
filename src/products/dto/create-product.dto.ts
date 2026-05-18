@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsUUID, MaxLength } from 'class-validator';
 
 export class CreateProductDto {
   @ApiProperty({ example: 'gid://shopify/Product/123456789' })
@@ -24,4 +24,14 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiProperty({ description: 'Style UUID to fix to this product', required: false })
+  @IsOptional()
+  @IsUUID()
+  styleId?: string;
+
+  @ApiProperty({ description: 'ProductType UUID', required: false })
+  @IsOptional()
+  @IsUUID()
+  productTypeId?: string;
 }

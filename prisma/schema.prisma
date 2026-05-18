@@ -122,9 +122,9 @@ model Style {
   descriptionExample String? @map("description_example") @db.Text
   templateVars       Json?   @map("template_vars")
 
-  generations  Generation[]
-  images       StyleImage[]
-  compatMatrix StyleFormatProductCompat[]
+  generations       Generation[]
+  images            StyleImage[]
+  productReferences ProductReference[]
 
   @@index([category])
   @@index([isActive])
@@ -167,11 +167,25 @@ model Format {
   updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
 
   generations     Generation[]
-  compatMatrix    StyleFormatProductCompat[]
   productVariants ProductFormatVariant[]
 
   @@index([isActive])
   @@map("formats")
+}
+
+model ProductType {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  displayName String   @map("display_name")
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  productReferences ProductReference[]
+
+  @@index([isActive])
+  @@map("product_types")
 }
 
 model ProductReference {
@@ -181,15 +195,19 @@ model ProductReference {
   name             String
   displayName      String   @map("display_name")
   description      String?
+  styleId          String?  @map("style_id")
+  productTypeId    String?  @map("product_type_id")
   isActive         Boolean  @default(true) @map("is_active")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
 
+  style           Style?       @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  productType     ProductType? @relation(fields: [productTypeId], references: [id], onDelete: SetNull)
   generations     Generation[]
-  compatMatrix    StyleFormatProductCompat[]
   productVariants ProductFormatVariant[]
 
   @@index([isActive])
+  @@index([styleId])
   @@map("product_references")
 }
 
@@ -199,6 +217,7 @@ model ProductFormatVariant {
   formatId            String   @map("format_id")
   shopifyVariantId    String   @map("shopify_variant_id")
   shopifyVariantTitle String   @map("shopify_variant_title")
+  constraints         Json?
   isActive            Boolean  @default(true) @map("is_active")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
@@ -206,34 +225,9 @@ model ProductFormatVariant {
   productRef ProductReference @relation(fields: [productRefId], references: [id], onDelete: Cascade)
   format     Format           @relation(fields: [formatId], references: [id], onDelete: Cascade)
 
-  @@unique([productRefId, formatId])
+  @@unique([productRefId, shopifyVariantId])
   @@index([shopifyVariantId])
   @@map("product_format_variants")
-}
-
-// ============================================
-// COMPATIBILITY MATRIX
-// ============================================
-
-model StyleFormatProductCompat {
-  id           String   @id @default(uuid())
-  styleId      String   @map("style_id")
-  formatId     String   @map("format_id")
-  productRefId String   @map("product_ref_id")
-  // Per-(style,format,product) overrides: maxPets, output resolution, prompt suffix,
-  // crop mode, print specs, etc. See backend/src/compat/compat.md → "El campo constraints".
-  constraints  Json?
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  style      Style            @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  format     Format           @relation(fields: [formatId], references: [id], onDelete: Cascade)
-  productRef ProductReference @relation(fields: [productRefId], references: [id], onDelete: Cascade)
-
-  @@unique([styleId, formatId, productRefId])
-  @@index([styleId])
-  @@index([formatId])
-  @@map("style_format_product_compat")
 }
 
 // ============================================

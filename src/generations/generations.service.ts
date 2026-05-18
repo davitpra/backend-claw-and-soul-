@@ -9,8 +9,6 @@ import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PetsService } from '../pets/pets.service';
-import { StylesService } from '../styles/styles.service';
-import { CompatService } from '../compat/compat.service';
 import { CreateImageGenerationDto } from './dto/create-image-generation.dto';
 import { UpdateGenerationFlagsDto } from './dto/update-generation-flags.dto';
 import {
@@ -26,8 +24,6 @@ export class GenerationsService {
   constructor(
     private prisma: PrismaService,
     private petsService: PetsService,
-    private stylesService: StylesService,
-    private compatService: CompatService,
     @InjectQueue(QUEUE_NAMES.IMAGE_GENERATION) private imageQueue: Queue,
   ) {}
 
@@ -54,18 +50,30 @@ export class GenerationsService {
       throw new BadRequestException('Pet photo has no URL');
     }
 
-    // Validate style exists
-    await this.stylesService.findOne(createDto.styleId);
-
-    // Validate (style, format, product) compatibility
-    const compat = await this.compatService.checkCompat(
-      createDto.styleId,
-      createDto.formatId,
-      createDto.productRefId,
-    );
-    if (!compat.compatible) {
+    // Resolve product and derive styleId from it
+    const product = await this.prisma.productReference.findUnique({
+      where: { id: createDto.productRefId },
+    });
+    if (!product || !product.isActive) {
+      throw new NotFoundException('Product not found or inactive');
+    }
+    if (!product.styleId) {
       throw new BadRequestException(
-        'Combination (style, format, product) is not in the compatibility matrix or is inactive',
+        'This product has no style assigned yet. An admin must link it to a style before it can be used for generation.',
+      );
+    }
+
+    // Validate the requested format is available for this product
+    const variant = await this.prisma.productFormatVariant.findFirst({
+      where: {
+        productRefId: createDto.productRefId,
+        formatId: createDto.formatId,
+        isActive: true,
+      },
+    });
+    if (!variant) {
+      throw new BadRequestException(
+        'The requested format is not available for this product.',
       );
     }
 
@@ -75,7 +83,7 @@ export class GenerationsService {
         userId,
         petId: createDto.petId,
         petPhotoId: createDto.petPhotoId,
-        styleId: createDto.styleId,
+        styleId: product.styleId,
         formatId: createDto.formatId,
         productRefId: createDto.productRefId,
         type: 'image',
@@ -86,7 +94,7 @@ export class GenerationsService {
         metadata: {
           width: createDto.width || 1024,
           height: createDto.height || 1024,
-          compatConstraints: compat.constraints ?? {},
+          compatConstraints: variant.constraints ?? {},
         },
       },
       include: {

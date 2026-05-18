@@ -141,6 +141,13 @@ export class AdminProductsController {
     };
   }
 
+  @Get('pending-style')
+  @ApiOperation({ summary: 'List active products that have no style assigned yet' })
+  @ApiResponse({ status: 200, description: 'Products pending style assignment' })
+  findPendingStyleAssignment() {
+    return this.productsService.findPendingStyleAssignment();
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create a new product' })
   @ApiResponse({ status: 201, description: 'Product created successfully' })

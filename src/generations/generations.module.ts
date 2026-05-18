@@ -5,7 +5,6 @@ import { GenerationsController } from './generations.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PetsModule } from '../pets/pets.module';
 import { StylesModule } from '../styles/styles.module';
-import { CompatModule } from '../compat/compat.module';
 import { ImageGenerationProcessor } from './processors/image-generation.processor';
 import { QUEUE_NAMES } from './constants/queues.constants';
 
@@ -22,7 +21,6 @@ import { FalService } from './providers/fal/fal.service';
     PrismaModule,
     PetsModule,
     StylesModule,
-    CompatModule,
     BullModule.registerQueue({ name: QUEUE_NAMES.IMAGE_GENERATION }),
   ],
   controllers: [GenerationsController],

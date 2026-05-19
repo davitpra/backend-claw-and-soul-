@@ -34,6 +34,13 @@ export class AdminProductsController {
     private readonly prisma: PrismaService,
   ) {}
 
+  @Get()
+  @ApiOperation({ summary: 'List all products including inactive (admin)' })
+  @ApiResponse({ status: 200, description: 'Products retrieved' })
+  findAll() {
+    return this.productsService.findAllForAdmin();
+  }
+
   @Get(':productId/variants')
   @ApiOperation({
     summary: 'Get linked and unlinked Shopify variants for a product',

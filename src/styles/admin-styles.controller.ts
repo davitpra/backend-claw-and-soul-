@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   ParseIntPipe,
   Patch,
@@ -37,6 +38,13 @@ import { RolesGuard } from '../common/guards/roles.guard';
 @Roles('admin')
 export class AdminStylesController {
   constructor(private readonly stylesService: StylesService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'List all styles including inactive (admin)' })
+  @ApiResponse({ status: 200, description: 'Styles retrieved' })
+  findAll() {
+    return this.stylesService.findAllForAdmin();
+  }
 
   @Post()
   @ApiOperation({ summary: 'Create a new style' })

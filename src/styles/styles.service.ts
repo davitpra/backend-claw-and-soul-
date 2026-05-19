@@ -76,6 +76,14 @@ export class StylesService {
     });
   }
 
+  async findAllForAdmin() {
+    const styles = await this.prisma.style.findMany({
+      orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
+      include: { images: { orderBy: { orderIndex: 'asc' } } },
+    });
+    return styles.map((s) => ({ ...s, previewUrl: derivePreviewUrl(s.images) }));
+  }
+
   async create(dto: CreateStyleDto) {
     return this.prisma.style.create({ data: dto });
   }

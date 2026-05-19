@@ -25,6 +25,7 @@ import { CompatModule } from './compat/compat.module';
 import { GalleryModule } from './gallery/gallery.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ShopifySyncModule } from './shopify-sync/shopify-sync.module';
+import { AdminModule } from './admin/admin.module';
 
 // Guards
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -69,6 +70,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     GalleryModule,
     WebhooksModule,
     ShopifySyncModule,
+    AdminModule,
   ],
   providers: [
     {

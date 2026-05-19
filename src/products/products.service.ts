@@ -67,6 +67,14 @@ export class ProductsService {
     return rows.map(addStylePreview);
   }
 
+  async findAllForAdmin() {
+    const rows = await this.prisma.productReference.findMany({
+      include: PRODUCT_INCLUDE,
+      orderBy: { name: 'asc' },
+    });
+    return rows.map(addStylePreview);
+  }
+
   async findPendingStyleAssignment() {
     const rows = await this.prisma.productReference.findMany({
       where: { isActive: true, styleId: null },

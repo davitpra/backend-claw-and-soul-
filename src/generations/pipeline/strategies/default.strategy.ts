@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   BaseStyleStrategy,
   PipelineContext,
@@ -17,12 +18,28 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
     private openRouterPrompt: OpenRouterPromptService,
     private fal: FalService,
     private storage: StorageService,
+    private configService: ConfigService,
   ) {
     super();
   }
 
   async execute(ctx: PipelineContext): Promise<PipelineResult> {
     const start = Date.now();
+
+    if (this.configService.get<boolean>('ai.mock')) {
+      this.logger.warn(
+        `[${ctx.generationId}] MOCK_AI=true — bypassing OpenRouter + Fal.ai, returning stub result`,
+      );
+      await new Promise((r) => setTimeout(r, 500));
+      return {
+        finalPrompt: '[mock] prompt skipped',
+        falRequestId: 'mock',
+        resultUrl: ctx.petPhotoUrl,
+        resultStorageKey: `generations/${ctx.generationId}/result-mock`,
+        processingTimeSeconds: Math.round((Date.now() - start) / 1000),
+        promptSnapshot: { mock: true },
+      };
+    }
 
     const { style } = ctx;
     const promptTemplate = style.promptTemplate ?? null;

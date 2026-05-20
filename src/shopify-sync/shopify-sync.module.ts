@@ -7,7 +7,7 @@ import { SHOPIFY_SYNC_QUEUE, REDIS_CLIENT } from './constants/queues.constants';
 import { ProductSyncService } from './product-sync.service';
 import { SyncService } from './sync.service';
 import { ShopifyApiService } from './shopify-api.service';
-import { ShopifyHmacGuard } from './guards/shopify-hmac.guard';
+import { ShopifyHmacGuard } from '../common/guards/shopify-hmac.guard';
 import { ShopifySyncProcessor } from './processors/shopify-sync.processor';
 import { ShopifyWebhooksController } from './shopify-webhooks.controller';
 import { AdminSyncController } from './admin-sync.controller';

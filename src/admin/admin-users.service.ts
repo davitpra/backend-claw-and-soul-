@@ -4,10 +4,14 @@ import {
   getPaginationParams,
   createPaginatedResult,
 } from '../common/utils/pagination.util';
+import { AdminOrdersService } from '../orders/admin-orders.service';
 
 @Injectable()
 export class AdminUsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private adminOrdersService: AdminOrdersService,
+  ) {}
 
   async listUsers(page = 1, limit = 20, search?: string) {
     const { skip, take } = getPaginationParams(page, limit);
@@ -106,5 +110,9 @@ export class AdminUsersService {
     ]);
 
     return createPaginatedResult(generations, total, page, limit);
+  }
+
+  async getUserOrders(userId: string, page = 1, limit = 10) {
+    return this.adminOrdersService.getUserOrders(userId, page, limit);
   }
 }

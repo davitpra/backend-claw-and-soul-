@@ -8,6 +8,8 @@ export class AdminStatsService {
   async getOverview() {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     const [
       totalUsers,
@@ -23,6 +25,9 @@ export class AdminStatsService {
       topStyles,
       recentSyncs,
       timeline,
+      ordersThisWeek,
+      revenueThisWeek,
+      ordersByProductionStatus,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.pet.count({ where: { isActive: true } }),
@@ -72,6 +77,23 @@ export class AdminStatsService {
         GROUP BY day
         ORDER BY day ASC
       `,
+
+      this.prisma.order.count({
+        where: { shopifyCreatedAt: { gte: sevenDaysAgo } },
+      }),
+
+      this.prisma.order.aggregate({
+        _sum: { totalAmount: true },
+        where: {
+          shopifyCreatedAt: { gte: sevenDaysAgo },
+          financialStatus: 'paid',
+        },
+      }),
+
+      this.prisma.orderItem.groupBy({
+        by: ['productionStatus'],
+        _count: { _all: true },
+      }),
     ]);
 
     return {
@@ -101,6 +123,13 @@ export class AdminStatsService {
         day: r.day.toISOString().split('T')[0],
         count: Number(r.count),
       })),
+      orders: {
+        thisWeek: ordersThisWeek,
+        revenueThisWeek: revenueThisWeek._sum.totalAmount?.toNumber() ?? 0,
+        byProductionStatus: Object.fromEntries(
+          ordersByProductionStatus.map((r) => [r.productionStatus, r._count._all]),
+        ),
+      },
     };
   }
 }

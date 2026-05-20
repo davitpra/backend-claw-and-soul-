@@ -29,6 +29,7 @@ model User {
   generations   Generation[]
   auditLogs     AuditLog[]
   refreshTokens RefreshToken[]
+  orders        Order[]
 
   @@index([email])
   @@index([role])
@@ -197,14 +198,16 @@ model ProductReference {
   description      String?
   styleId          String?  @map("style_id")
   productTypeId    String?  @map("product_type_id")
-  isActive         Boolean  @default(true) @map("is_active")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+  isActive          Boolean  @default(true) @map("is_active")
+  fulfillmentMethod String   @default("in_house") @map("fulfillment_method") // in_house | pod
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
 
   style           Style?       @relation(fields: [styleId], references: [id], onDelete: SetNull)
   productType     ProductType? @relation(fields: [productTypeId], references: [id], onDelete: SetNull)
   generations     Generation[]
   productVariants ProductFormatVariant[]
+  orderItems      OrderItem[]
 
   @@index([isActive])
   @@index([styleId])
@@ -224,6 +227,7 @@ model ProductFormatVariant {
 
   productRef ProductReference @relation(fields: [productRefId], references: [id], onDelete: Cascade)
   format     Format           @relation(fields: [formatId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
 
   @@unique([productRefId, shopifyVariantId])
   @@index([shopifyVariantId])
@@ -269,6 +273,7 @@ model Generation {
   style      Style             @relation(fields: [styleId], references: [id], onDelete: Restrict)
   format     Format?           @relation(fields: [formatId], references: [id], onDelete: SetNull)
   productRef ProductReference? @relation(fields: [productRefId], references: [id], onDelete: SetNull)
+  orderItems OrderItem[]
 
   @@index([userId])
   @@index([petId])
@@ -302,6 +307,113 @@ model AuditLog {
   @@index([action])
   @@index([createdAt(sort: Desc)])
   @@map("audit_logs")
+}
+
+// ============================================
+// ORDERS
+// ============================================
+
+model Order {
+  id                String    @id @default(uuid())
+  shopifyOrderId    String    @unique @map("shopify_order_id")
+  shopifyOrderGid   String?   @map("shopify_order_gid")
+  orderNumber       String    @map("order_number")
+  userId            String?   @map("user_id")
+  customerEmail     String?   @map("customer_email")
+  customerName      String?   @map("customer_name")
+  customerPhone     String?   @map("customer_phone")
+  financialStatus   String?   @map("financial_status") // paid | refunded | pending | voided
+  fulfillmentStatus String?   @map("fulfillment_status") // unfulfilled | partial | fulfilled
+  currency          String    @default("USD")
+  subtotalAmount    Decimal   @map("subtotal_amount") @db.Decimal(10, 2)
+  shippingAmount    Decimal?  @map("shipping_amount") @db.Decimal(10, 2)
+  taxAmount         Decimal?  @map("tax_amount") @db.Decimal(10, 2)
+  totalAmount       Decimal   @map("total_amount") @db.Decimal(10, 2)
+  shippingAddress   Json?     @map("shipping_address")
+  billingAddress    Json?     @map("billing_address")
+  customerNote      String?   @map("customer_note")
+  shopifyCreatedAt  DateTime  @map("shopify_created_at")
+  shopifyUpdatedAt  DateTime? @map("shopify_updated_at")
+  cancelledAt       DateTime? @map("cancelled_at")
+  rawPayload        Json      @map("raw_payload")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user   User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items  OrderItem[]
+  events OrderEvent[]
+
+  @@index([userId])
+  @@index([customerEmail])
+  @@index([shopifyCreatedAt(sort: Desc)])
+  @@index([financialStatus])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                     String    @id @default(uuid())
+  orderId                String    @map("order_id")
+  shopifyLineItemId      String    @map("shopify_line_item_id")
+  shopifyVariantId       String?   @map("shopify_variant_id")
+  shopifyProductId       String?   @map("shopify_product_id")
+  productRefId           String?   @map("product_ref_id")
+  productFormatVariantId String?   @map("product_format_variant_id")
+  generationId           String?   @map("generation_id")
+  title                  String
+  variantTitle           String?   @map("variant_title")
+  sku                    String?
+  quantity               Int
+  unitPrice              Decimal   @map("unit_price") @db.Decimal(10, 2)
+  totalPrice             Decimal   @map("total_price") @db.Decimal(10, 2)
+  imageUrl               String?   @map("image_url")
+  style                  String?
+  size                   String?
+  fulfillmentMethod      String    @default("in_house") @map("fulfillment_method") // in_house | pod
+  productionStatus       String    @default("paid") @map("production_status") // paid | in_production | shipped | delivered | cancelled | refunded
+  trackingNumber         String?   @map("tracking_number")
+  trackingUrl            String?   @map("tracking_url")
+  trackingCarrier        String?   @map("tracking_carrier")
+  podProvider            String?   @map("pod_provider")
+  podOrderId             String?   @map("pod_order_id")
+  podRawResponse         Json?     @map("pod_raw_response")
+  notes                  String?
+  shippedAt              DateTime? @map("shipped_at")
+  deliveredAt            DateTime? @map("delivered_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  order          Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productRef     ProductReference?      @relation(fields: [productRefId], references: [id], onDelete: SetNull)
+  productVariant ProductFormatVariant?  @relation(fields: [productFormatVariantId], references: [id], onDelete: SetNull)
+  generation     Generation?            @relation(fields: [generationId], references: [id], onDelete: SetNull)
+  events         OrderEvent[]
+
+  @@unique([orderId, shopifyLineItemId])
+  @@index([generationId])
+  @@index([productionStatus])
+  @@index([fulfillmentMethod])
+  @@index([productRefId])
+  @@map("order_items")
+}
+
+model OrderEvent {
+  id          String   @id @default(uuid())
+  orderId     String   @map("order_id")
+  orderItemId String?  @map("order_item_id")
+  eventType   String   @map("event_type") // status_change | tracking_added | webhook_received | manual_resync | pod_submit | pod_skip | warning
+  fromStatus  String?  @map("from_status")
+  toStatus    String?  @map("to_status")
+  payload     Json?
+  userId      String?  @map("user_id")
+  source      String   @default("system") // system | admin | webhook | pod
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt(sort: Desc)])
+  @@index([orderItemId])
+  @@map("order_events")
 }
 
 // ============================================

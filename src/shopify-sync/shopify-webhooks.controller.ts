@@ -4,7 +4,7 @@ import { Queue } from 'bullmq';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
-import { ShopifyHmacGuard } from './guards/shopify-hmac.guard';
+import { ShopifyHmacGuard } from '../common/guards/shopify-hmac.guard';
 import {
   SHOPIFY_SYNC_QUEUE,
   SHOPIFY_SYNC_JOB_NAMES,

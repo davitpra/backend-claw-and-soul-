@@ -1,11 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ShopifyProductPayload } from './dto/shopify-product.dto';
+import { ShopifyOrderPayload } from '../orders/dto/shopify-order.dto';
 
 const WEBHOOK_TOPICS = [
   'products/create',
   'products/update',
   'products/delete',
+  'orders/create',
+  'orders/paid',
+  'orders/updated',
+  'orders/cancelled',
+  'orders/fulfilled',
 ];
 const PAGE_SIZE = 250;
 const PAGE_DELAY_MS = 500;
@@ -63,12 +69,42 @@ export class ShopifyApiService {
     }
   }
 
+  async fetchAllOrders(sinceIso?: string): Promise<ShopifyOrderPayload[]> {
+    const all: ShopifyOrderPayload[] = [];
+    const since = sinceIso ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    let nextUrl: string | null =
+      `${this.baseUrl}/orders.json?status=any&limit=${PAGE_SIZE}&created_at_min=${encodeURIComponent(since)}`;
+
+    while (nextUrl) {
+      const response = await this.fetchWithRetry(nextUrl);
+      const json = (await response.json()) as { orders: ShopifyOrderPayload[] };
+      all.push(...json.orders);
+
+      nextUrl = this.extractNextPageUrl(response.headers.get('link'));
+      if (nextUrl) await this.delay(PAGE_DELAY_MS);
+    }
+
+    this.logger.log(`Fetched ${all.length} orders from Shopify since ${since}`);
+    return all;
+  }
+
+  async fetchOrderById(shopifyOrderId: string): Promise<ShopifyOrderPayload | null> {
+    try {
+      const response = await this.fetchWithRetry(
+        `${this.baseUrl}/orders/${shopifyOrderId}.json`,
+      );
+      const json = (await response.json()) as { order: ShopifyOrderPayload };
+      return json.order ?? null;
+    } catch {
+      this.logger.warn(`Could not fetch Shopify order ${shopifyOrderId}`);
+      return null;
+    }
+  }
+
   async registerWebhooks(appPublicUrl: string): Promise<void> {
     for (const topic of WEBHOOK_TOPICS) {
-      const topicSlug = topic
-        .replace('/', '-')
-        .replace('products-', 'product/');
-      const address = `${appPublicUrl}/api/webhooks/shopify/${topicSlug}`;
+      const [resource, event] = topic.split('/');
+      const address = `${appPublicUrl}/api/webhooks/shopify/${resource.replace(/s$/, '')}/${event}`;
 
       try {
         const response = await fetch(`${this.baseUrl}/webhooks.json`, {

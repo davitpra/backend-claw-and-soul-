@@ -60,4 +60,17 @@ export class AdminUsersController {
   ) {
     return this.usersService.getUserGenerations(id, page, limit);
   }
+
+  @Get(':id/orders')
+  @ApiOperation({ summary: 'Get orders for a user (paginated)' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'User orders retrieved' })
+  orders(
+    @Param('id') id: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    return this.usersService.getUserOrders(id, page, limit);
+  }
 }

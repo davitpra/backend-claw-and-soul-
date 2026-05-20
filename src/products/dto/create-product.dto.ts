@@ -33,8 +33,12 @@ export class CreateProductDto {
   @IsUUID()
   styleId?: string;
 
-  @ApiProperty({ description: 'ProductType UUID', required: false })
+  @ApiProperty({
+    description: 'Product type string synced from Shopify (e.g. "Canvas")',
+    required: false,
+  })
   @IsOptional()
-  @IsUUID()
-  productTypeId?: string;
+  @IsString()
+  @MaxLength(100)
+  productType?: string;
 }

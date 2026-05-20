@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, Logger, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
@@ -28,7 +24,8 @@ export class OrdersSyncService {
       throw new ConflictException('An order sync is already in progress');
     }
 
-    const days = this.configService.get<number>('ORDERS_SYNC_BACKFILL_DAYS') ?? 30;
+    const days =
+      this.configService.get<number>('ORDERS_SYNC_BACKFILL_DAYS') ?? 30;
     const defaultSince = new Date(
       Date.now() - days * 24 * 60 * 60 * 1000,
     ).toISOString();

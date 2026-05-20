@@ -1,13 +1,12 @@
 // ClawAndSoul - AI Pet Portrait E-Commerce Platform
-// Database Schema v4.0
-// Updated: May 18, 2026
+// Database Schema v5.0
+// Updated: May 20, 2026
 //
-// Cambio principal v4.0:
-//   - Cada producto de Shopify lleva un estilo fijo (muchos-a-uno con styles).
-//   - Se eliminó la tabla style_format_product_compat (matriz de 3 ejes).
-//   - Se añadió product_types para categorizar los productos físicos.
-//   - product_references ahora referencia style_id y product_type_id.
-//   - product_format_variants absorbe los constraints por (producto, formato).
+// Cambios principales v5.0 (vs v4.0):
+//   - Se añadió el módulo de Orders: Order, OrderItem, OrderEvent.
+//   - product_references ahora incluye fulfillment_method (in_house | pod).
+//   - order_items vincula Order ↔ ProductReference, ProductFormatVariant y Generation.
+//   - order_events registra el historial de cambios de estado por ítem/orden.
 
 // ============================================
 // AUTHENTICATION & USERS
@@ -190,6 +189,7 @@ display_name varchar [not null, note: 'e.g. Póster Acuarela']
 description text
 style_id varchar [ref: > styles.id, note: 'Estilo fijo de este producto. Null hasta que un admin lo asigna.']
 product_type_id varchar [ref: > product_types.id, note: 'Derivado de Shopify product_type en el sync.']
+fulfillment_method varchar [not null, default: 'in_house', note: 'Enum: in_house | pod']
 is_active boolean
 created_at timestamp
 updated_at timestamp
@@ -199,7 +199,7 @@ is_active
 style_id
 }
 
-Note: 'Espejo ligero de un producto de Shopify. Cada producto lleva un estilo fijo (style_id) y un tipo (product_type_id). El sync lo crea con style_id = null; un admin lo vincula manualmente. Sin estilo asignado el producto no aparece en el flujo de generación.'
+Note: 'Espejo ligero de un producto de Shopify. Cada producto lleva un estilo fijo (style_id), un tipo (product_type_id) y un método de fulfillment (in_house | pod). El sync lo crea con style_id = null; un admin lo vincula manualmente. Sin estilo asignado el producto no aparece en el flujo de generación.'
 }
 
 Table product_format_variants {
@@ -269,6 +269,109 @@ Note: 'style_id se denormaliza en el momento de crear la generación (copiado de
 }
 
 // ============================================
+// ORDERS
+// ============================================
+
+Table orders {
+id varchar [pk]
+shopify_order_id varchar [not null, unique, note: 'ID numérico del pedido en Shopify']
+shopify_order_gid varchar [note: 'Global ID de Shopify (gid://shopify/Order/...)']
+order_number varchar [not null, note: 'Número de pedido visible, e.g. #1001']
+user_id varchar [ref: > users.id, note: 'Null si el cliente no tiene cuenta en la plataforma']
+customer_email varchar
+customer_name varchar
+customer_phone varchar
+financial_status varchar [note: 'paid | refunded | pending | voided']
+fulfillment_status varchar [note: 'unfulfilled | partial | fulfilled']
+currency varchar [default: 'USD']
+subtotal_amount decimal [not null]
+shipping_amount decimal
+tax_amount decimal
+total_amount decimal [not null]
+shipping_address json
+billing_address json
+customer_note varchar
+shopify_created_at timestamp [not null]
+shopify_updated_at timestamp
+cancelled_at timestamp
+raw_payload json [not null, note: 'Payload completo del webhook de Shopify']
+created_at timestamp
+updated_at timestamp
+
+indexes {
+user_id
+customer_email
+shopify_created_at [note: 'sort: desc']
+financial_status
+}
+
+Note: 'Espejo de un pedido de Shopify creado vía webhook. raw_payload guarda el JSON original para re-procesamiento. user_id se resuelve por email al sincronizar.'
+}
+
+Table order_items {
+id varchar [pk]
+order_id varchar [not null, ref: > orders.id]
+shopify_line_item_id varchar [not null, note: 'ID de la línea en Shopify']
+shopify_variant_id varchar [note: 'ID numérico de la variante comprada']
+shopify_product_id varchar [note: 'ID numérico del producto en Shopify']
+product_ref_id varchar [ref: > product_references.id]
+product_format_variant_id varchar [ref: > product_format_variants.id]
+generation_id varchar [ref: > generations.id, note: 'Arte generado que se imprimirá. Null hasta que el cliente lo vincula.']
+title varchar [not null]
+variant_title varchar
+sku varchar
+quantity int [not null]
+unit_price decimal [not null]
+total_price decimal [not null]
+image_url varchar
+style varchar [note: 'Nombre del estilo copiado de la variante']
+size varchar [note: 'Tamaño copiado de la variante']
+fulfillment_method varchar [not null, default: 'in_house', note: 'in_house | pod']
+production_status varchar [not null, default: 'paid', note: 'paid | in_production | shipped | delivered | cancelled | refunded']
+tracking_number varchar
+tracking_url varchar
+tracking_carrier varchar
+pod_provider varchar [note: 'Proveedor POD, e.g. printful, printify']
+pod_order_id varchar [note: 'ID del pedido en el proveedor POD']
+pod_raw_response json [note: 'Respuesta cruda del proveedor POD']
+notes varchar
+shipped_at timestamp
+delivered_at timestamp
+created_at timestamp
+updated_at timestamp
+
+indexes {
+(order_id, shopify_line_item_id) [unique]
+generation_id
+production_status
+fulfillment_method
+product_ref_id
+}
+
+Note: 'Cada línea de un pedido de Shopify. Se vincula a una Generation cuando el cliente asocia su arte. production_status sigue el ciclo de vida de producción independientemente del fulfillment_status de Shopify.'
+}
+
+Table order_events {
+id varchar [pk]
+order_id varchar [not null, ref: > orders.id]
+order_item_id varchar [ref: > order_items.id]
+event_type varchar [not null, note: 'status_change | tracking_added | webhook_received | manual_resync | pod_submit | pod_skip | warning']
+from_status varchar
+to_status varchar
+payload json
+user_id varchar [note: 'Admin que disparó el evento; null si fue automático']
+source varchar [not null, default: 'system', note: 'system | admin | webhook | pod']
+created_at timestamp
+
+indexes {
+(order_id, created_at) [note: 'sort: desc']
+order_item_id
+}
+
+Note: 'Log inmutable de cambios de estado en órdenes e ítems. Permite auditar toda la vida del pedido (webhook recibido, arte vinculado, enviado a POD, tracking añadido, etc.).'
+}
+
+// ============================================
 // AUDIT LOGS
 // ============================================
 
@@ -319,13 +422,21 @@ status
 // RELACIONES CLAVE (resumen)
 // ============================================
 //
-// Style            --<  ProductReference     (1 estilo, N productos que lo usan)
-// ProductType      --<  ProductReference     (1 tipo, N productos de ese tipo)
-// ProductReference --<  ProductFormatVariant (1 producto, N tamaños disponibles)
-// Format           --<  ProductFormatVariant (1 formato, N productos que lo ofrecen)
+// Style            --<  ProductReference      (1 estilo, N productos que lo usan)
+// ProductType      --<  ProductReference      (1 tipo, N productos de ese tipo)
+// ProductReference --<  ProductFormatVariant  (1 producto, N tamaños disponibles)
+// Format           --<  ProductFormatVariant  (1 formato, N productos que lo ofrecen)
 //
 // Al crear una Generation:
 //   1. El cliente envía: productRefId + formatId
 //   2. El backend deriva: styleId = product_references.style_id
 //   3. Valida que product_format_variants tenga la fila (productRefId, formatId) activa
 //   4. Guarda styleId denormalizado en generations para historial inmutable
+//
+// Flujo de Orders (Shopify → plataforma):
+//   1. Webhook de Shopify crea/actualiza Order + OrderItems
+//   2. Cada OrderItem se vincula a ProductReference y ProductFormatVariant por shopify_variant_id
+//   3. user_id se resuelve por customer_email (null si no existe cuenta)
+//   4. El cliente vincula su Generation al OrderItem (generation_id)
+//   5. Admin cambia production_status; cada cambio genera un OrderEvent
+//   6. Si fulfillment_method = 'pod', se envía a proveedor y se guarda pod_order_id/pod_raw_response

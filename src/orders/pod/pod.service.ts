@@ -9,7 +9,8 @@ export class PodService {
   constructor(private readonly configService: ConfigService) {}
 
   async submitOrder(input: PodSubmitInput): Promise<void> {
-    const enabled = this.configService.get<string>('ORDERS_POD_ENABLED') === 'true';
+    const enabled =
+      this.configService.get<string>('ORDERS_POD_ENABLED') === 'true';
     if (!enabled) {
       this.logger.debug(
         `POD disabled — skipping submitOrder for item ${input.orderItemId}`,

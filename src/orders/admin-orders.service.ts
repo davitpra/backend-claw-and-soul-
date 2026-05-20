@@ -97,7 +97,12 @@ export class AdminOrdersService {
         items: {
           include: {
             productRef: {
-              select: { id: true, name: true, displayName: true, fulfillmentMethod: true },
+              select: {
+                id: true,
+                name: true,
+                displayName: true,
+                fulfillmentMethod: true,
+              },
             },
             productVariant: {
               select: { id: true, shopifyVariantTitle: true },
@@ -141,10 +146,12 @@ export class AdminOrdersService {
     const days = { '7d': 7, '30d': 30, '90d': 90 }[period];
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const [total, periodTotal, revenue, byProductionStatus] =
-      await Promise.all([
+    const [total, periodTotal, revenue, byProductionStatus] = await Promise.all(
+      [
         this.prisma.order.count(),
-        this.prisma.order.count({ where: { shopifyCreatedAt: { gte: since } } }),
+        this.prisma.order.count({
+          where: { shopifyCreatedAt: { gte: since } },
+        }),
         this.prisma.order.aggregate({
           _sum: { totalAmount: true },
           where: {
@@ -156,7 +163,8 @@ export class AdminOrdersService {
           by: ['productionStatus'],
           _count: { _all: true },
         }),
-      ]);
+      ],
+    );
 
     return {
       total,

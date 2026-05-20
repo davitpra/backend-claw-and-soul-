@@ -81,7 +81,10 @@ export class StylesService {
       orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
       include: { images: { orderBy: { orderIndex: 'asc' } } },
     });
-    return styles.map((s) => ({ ...s, previewUrl: derivePreviewUrl(s.images) }));
+    return styles.map((s) => ({
+      ...s,
+      previewUrl: derivePreviewUrl(s.images),
+    }));
   }
 
   async create(dto: CreateStyleDto) {

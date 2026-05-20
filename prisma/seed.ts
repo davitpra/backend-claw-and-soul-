@@ -6,32 +6,8 @@ async function main() {
   console.log('🌱 Seeding database...');
 
   // NOTE: Formats, products and Shopify variants are managed by the Shopify sync
-  // service, not by this seed. Do not add them here.
-
-  // ============================================
-  // PRODUCT TYPES
-  // ============================================
-  console.log('📦 Creating product types...');
-
-  const productTypesData = [
-    { name: 'poster', displayName: 'Póster' },
-    { name: 'canvas', displayName: 'Lienzo' },
-    { name: 'mug', displayName: 'Taza' },
-    { name: 'tshirt', displayName: 'Camiseta' },
-    { name: 'sticker', displayName: 'Sticker' },
-  ];
-
-  let productTypeCount = 0;
-  for (const pt of productTypesData) {
-    await prisma.productType.upsert({
-      where: { name: pt.name },
-      update: {},
-      create: { name: pt.name, displayName: pt.displayName, isActive: true },
-    });
-    productTypeCount++;
-  }
-
-  console.log(`  ✓ ${productTypeCount} product types upserted`);
+  // service, not by this seed. Do not add them here. Product types are now a
+  // string column on ProductReference, synced from Shopify on upsert.
 
   // ============================================
   // STYLES
@@ -202,7 +178,6 @@ async function main() {
   console.log(`  ✓ ${constraintsUpdated} variant constraints updated (${constraintsSkipped} skipped)`);
 
   console.log('\n✅ Seeding completed successfully!');
-  console.log(`   - Product types: ${productTypeCount}`);
   console.log(`   - Styles: ${Object.keys(createdStyles).length}`);
   console.log(`   - Variant constraints: ${constraintsUpdated} updated`);
 }

@@ -67,22 +67,30 @@ export class OrdersService {
         userId,
         customerEmail: payload.email ?? null,
         customerName: payload.customer
-          ? `${payload.customer.first_name ?? ''} ${payload.customer.last_name ?? ''}`.trim() || null
+          ? `${payload.customer.first_name ?? ''} ${payload.customer.last_name ?? ''}`.trim() ||
+            null
           : null,
         customerPhone: payload.phone ?? payload.customer?.phone ?? null,
         financialStatus: payload.financial_status ?? null,
         fulfillmentStatus: payload.fulfillment_status ?? null,
         currency: payload.currency,
         subtotalAmount: new Prisma.Decimal(payload.subtotal_price),
-        shippingAmount: shippingTotal ? new Prisma.Decimal(shippingTotal) : null,
+        shippingAmount: shippingTotal
+          ? new Prisma.Decimal(shippingTotal)
+          : null,
         taxAmount: new Prisma.Decimal(payload.total_tax),
         totalAmount: new Prisma.Decimal(payload.total_price),
-        shippingAddress: (payload.shipping_address as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-        billingAddress: (payload.billing_address as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        shippingAddress:
+          (payload.shipping_address as Prisma.InputJsonValue) ??
+          Prisma.JsonNull,
+        billingAddress:
+          (payload.billing_address as Prisma.InputJsonValue) ?? Prisma.JsonNull,
         customerNote: payload.note ?? null,
         shopifyCreatedAt: new Date(payload.created_at),
         shopifyUpdatedAt: new Date(payload.updated_at),
-        cancelledAt: payload.cancelled_at ? new Date(payload.cancelled_at) : null,
+        cancelledAt: payload.cancelled_at
+          ? new Date(payload.cancelled_at)
+          : null,
         rawPayload: payload as unknown as Prisma.InputJsonValue,
       },
       update: {
@@ -92,13 +100,19 @@ export class OrdersService {
         financialStatus: payload.financial_status ?? undefined,
         fulfillmentStatus: payload.fulfillment_status ?? undefined,
         subtotalAmount: new Prisma.Decimal(payload.subtotal_price),
-        shippingAmount: shippingTotal ? new Prisma.Decimal(shippingTotal) : undefined,
+        shippingAmount: shippingTotal
+          ? new Prisma.Decimal(shippingTotal)
+          : undefined,
         taxAmount: new Prisma.Decimal(payload.total_tax),
         totalAmount: new Prisma.Decimal(payload.total_price),
-        shippingAddress: (payload.shipping_address as Prisma.InputJsonValue) ?? undefined,
-        billingAddress: (payload.billing_address as Prisma.InputJsonValue) ?? undefined,
+        shippingAddress:
+          (payload.shipping_address as Prisma.InputJsonValue) ?? undefined,
+        billingAddress:
+          (payload.billing_address as Prisma.InputJsonValue) ?? undefined,
         shopifyUpdatedAt: new Date(payload.updated_at),
-        cancelledAt: payload.cancelled_at ? new Date(payload.cancelled_at) : undefined,
+        cancelledAt: payload.cancelled_at
+          ? new Date(payload.cancelled_at)
+          : undefined,
         rawPayload: payload as unknown as Prisma.InputJsonValue,
       },
     });
@@ -129,8 +143,12 @@ export class OrdersService {
     financialStatus: string | undefined,
   ): Promise<void> {
     const shopifyLineItemId = String(lineItem.id);
-    const shopifyVariantId = lineItem.variant_id ? String(lineItem.variant_id) : null;
-    const shopifyProductId = lineItem.product_id ? String(lineItem.product_id) : null;
+    const shopifyVariantId = lineItem.variant_id
+      ? String(lineItem.variant_id)
+      : null;
+    const shopifyProductId = lineItem.product_id
+      ? String(lineItem.product_id)
+      : null;
 
     // Extract cart attributes
     const attrs = Object.fromEntries(
@@ -201,9 +219,15 @@ export class OrdersService {
         imageUrl: imageUrl ?? undefined,
         style: style ?? undefined,
         size: size ?? undefined,
-        productRef: productRefId ? { connect: { id: productRefId } } : undefined,
-        productVariant: productFormatVariantId ? { connect: { id: productFormatVariantId } } : undefined,
-        generation: generationId ? { connect: { id: generationId } } : undefined,
+        productRef: productRefId
+          ? { connect: { id: productRefId } }
+          : undefined,
+        productVariant: productFormatVariantId
+          ? { connect: { id: productFormatVariantId } }
+          : undefined,
+        generation: generationId
+          ? { connect: { id: generationId } }
+          : undefined,
       };
 
       // Only move to terminal status if current status is still the initial one
@@ -351,7 +375,10 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
     if (!user) throw new NotFoundException('User not found');
 
-    await this.prisma.order.update({ where: { id: orderId }, data: { userId } });
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { userId },
+    });
     await this.prisma.orderEvent.create({
       data: {
         orderId,

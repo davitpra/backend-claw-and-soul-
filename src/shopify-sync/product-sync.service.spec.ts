@@ -48,6 +48,7 @@ describe('ProductSyncService', () => {
         handle: 'my-poster',
         title: 'My Poster',
         body_html: '<p>desc</p>',
+        product_type: 'Poster',
         status: 'active',
         variants: [],
       });
@@ -60,6 +61,7 @@ describe('ProductSyncService', () => {
             name: 'my-poster',
             displayName: 'My Poster',
             description: 'desc',
+            productType: 'Poster',
             isActive: true,
           }) as unknown,
         }),
@@ -79,6 +81,7 @@ describe('ProductSyncService', () => {
         handle: 'my-poster',
         title: 'My Poster Updated',
         body_html: '',
+        product_type: 'Canvas',
         status: 'active',
         variants: [],
       });

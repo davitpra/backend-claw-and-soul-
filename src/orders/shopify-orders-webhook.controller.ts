@@ -17,9 +17,7 @@ import { ShopifyOrderPayload } from './dto/shopify-order.dto';
 @UseGuards(ShopifyHmacGuard)
 @Controller('webhooks/shopify/order')
 export class ShopifyOrdersWebhookController {
-  constructor(
-    @InjectQueue(ORDERS_QUEUE) private readonly ordersQueue: Queue,
-  ) {}
+  constructor(@InjectQueue(ORDERS_QUEUE) private readonly ordersQueue: Queue) {}
 
   private async enqueue(req: Request, topic: string) {
     const payload = JSON.parse(

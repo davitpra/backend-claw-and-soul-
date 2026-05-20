@@ -11,6 +11,7 @@ export interface ShopifyProductPayload {
   handle: string;
   title: string;
   body_html: string;
+  product_type: string;
   status: string; // 'active' | 'archived' | 'draft'
   variants: ShopifyVariant[];
 }

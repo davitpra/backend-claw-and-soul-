@@ -37,7 +37,10 @@ export class AdminStatsService {
       this.prisma.productReference.count({ where: { isActive: true } }),
 
       this.prisma.user.groupBy({ by: ['role'], _count: { _all: true } }),
-      this.prisma.generation.groupBy({ by: ['status'], _count: { _all: true } }),
+      this.prisma.generation.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
       this.prisma.generation.groupBy({ by: ['type'], _count: { _all: true } }),
       this.prisma.pet.groupBy({ by: ['species'], _count: { _all: true } }),
 
@@ -127,7 +130,10 @@ export class AdminStatsService {
         thisWeek: ordersThisWeek,
         revenueThisWeek: revenueThisWeek._sum.totalAmount?.toNumber() ?? 0,
         byProductionStatus: Object.fromEntries(
-          ordersByProductionStatus.map((r) => [r.productionStatus, r._count._all]),
+          ordersByProductionStatus.map((r) => [
+            r.productionStatus,
+            r._count._all,
+          ]),
         ),
       },
     };

@@ -22,7 +22,6 @@ const PRODUCT_INCLUDE = {
       },
     },
   },
-  productType: { select: { id: true, name: true, displayName: true } },
 };
 
 type WithStylePreview<

@@ -139,9 +139,14 @@ export class AdminOrdersController {
     const shopifyOrder = await this.shopifyApiService.fetchOrderById(
       order.shopifyOrderId,
     );
-    if (!shopifyOrder) throw new NotFoundException('Order not found in Shopify');
+    if (!shopifyOrder)
+      throw new NotFoundException('Order not found in Shopify');
 
-    await this.ordersService.ingestShopifyOrder(shopifyOrder, undefined, 'manual_resync');
+    await this.ordersService.ingestShopifyOrder(
+      shopifyOrder,
+      undefined,
+      'manual_resync',
+    );
     return { ok: true };
   }
 
@@ -158,6 +163,10 @@ export class AdminOrdersController {
     @Param('itemId') itemId: string,
     @Body('generationId') generationId: string,
   ) {
-    return this.ordersService.linkGenerationToItem(orderId, itemId, generationId);
+    return this.ordersService.linkGenerationToItem(
+      orderId,
+      itemId,
+      generationId,
+    );
   }
 }

@@ -71,7 +71,8 @@ export class ShopifyApiService {
 
   async fetchAllOrders(sinceIso?: string): Promise<ShopifyOrderPayload[]> {
     const all: ShopifyOrderPayload[] = [];
-    const since = sinceIso ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const since =
+      sinceIso ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     let nextUrl: string | null =
       `${this.baseUrl}/orders.json?status=any&limit=${PAGE_SIZE}&created_at_min=${encodeURIComponent(since)}`;
 
@@ -88,7 +89,9 @@ export class ShopifyApiService {
     return all;
   }
 
-  async fetchOrderById(shopifyOrderId: string): Promise<ShopifyOrderPayload | null> {
+  async fetchOrderById(
+    shopifyOrderId: string,
+  ): Promise<ShopifyOrderPayload | null> {
     try {
       const response = await this.fetchWithRetry(
         `${this.baseUrl}/orders/${shopifyOrderId}.json`,

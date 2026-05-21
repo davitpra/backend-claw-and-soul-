@@ -190,4 +190,12 @@ export class AdminProductsController {
   softDelete(@Param('productId') productId: string) {
     return this.productsService.softDelete(productId);
   }
+
+  @Delete(':productId/permanent')
+  @ApiOperation({ summary: 'Permanently delete a product from the database' })
+  @ApiResponse({ status: 200, description: 'Product deleted permanently' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  hardDelete(@Param('productId') productId: string) {
+    return this.productsService.hardDelete(productId);
+  }
 }

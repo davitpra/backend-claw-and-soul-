@@ -194,4 +194,9 @@ export class ProductsService {
       data: { isActive: false },
     });
   }
+
+  async hardDelete(id: string) {
+    await this.findOne(id);
+    return this.prisma.productReference.delete({ where: { id } });
+  }
 }

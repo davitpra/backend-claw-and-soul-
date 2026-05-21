@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -17,9 +18,11 @@ import {
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { LinkVariantDto } from './dto/link-variant.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
+import { ProductSyncService } from '../shopify-sync/product-sync.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 @ApiTags('admin-products')
@@ -31,6 +34,7 @@ export class AdminProductsController {
   constructor(
     private readonly productsService: ProductsService,
     private readonly shopifyApiService: ShopifyApiService,
+    private readonly productSyncService: ProductSyncService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -39,6 +43,25 @@ export class AdminProductsController {
   @ApiResponse({ status: 200, description: 'Products retrieved' })
   findAll() {
     return this.productsService.findAllForAdmin();
+  }
+
+  @Get(':productId')
+  @ApiOperation({ summary: 'Get a single product by id (admin)' })
+  @ApiResponse({ status: 200, description: 'Product retrieved' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  findOne(@Param('productId') productId: string) {
+    return this.productsService.findOne(productId);
+  }
+
+  @Post(':productId/variants/link')
+  @ApiOperation({ summary: 'Manually link a Shopify variant to a format' })
+  @ApiResponse({ status: 201, description: 'Variant linked successfully' })
+  @ApiResponse({ status: 404, description: 'Product or format not found' })
+  linkVariant(
+    @Param('productId') productId: string,
+    @Body() dto: LinkVariantDto,
+  ) {
+    return this.productsService.linkVariant(productId, dto);
   }
 
   @Get(':productId/variants')
@@ -120,6 +143,7 @@ export class AdminProductsController {
         unlinkedVariants.push({
           shopifyVariantId,
           shopifyVariantTitle: variant.title,
+          shopifyVariantOption: null,
           reason: 'La variante no tiene opción de tamaño (option1 vacío)',
         });
         continue;
@@ -130,12 +154,14 @@ export class AdminProductsController {
         unlinkedVariants.push({
           shopifyVariantId,
           shopifyVariantTitle: variant.title,
+          shopifyVariantOption: sizeValue,
           reason: `No hay formato configurado para '${sizeValue}'`,
         });
       } else {
         unlinkedVariants.push({
           shopifyVariantId,
           shopifyVariantTitle: variant.title,
+          shopifyVariantOption: sizeValue,
           reason: `Formato '${matchedFormat.displayName}' existe pero no hay registro de vínculo (re-sincronizar)`,
         });
       }
@@ -146,6 +172,29 @@ export class AdminProductsController {
       linkedVariants,
       unlinkedVariants,
     };
+  }
+
+  @Post(':productId/variants/sync')
+  @ApiOperation({
+    summary: 'Re-fetch Shopify variants for a product and auto-link to formats',
+  })
+  @ApiResponse({ status: 200, description: 'Variants resynced' })
+  @ApiResponse({ status: 404, description: 'Product not found in DB or Shopify' })
+  async syncVariants(@Param('productId') productId: string) {
+    const product = await this.productsService.findOne(productId);
+    const shopifyProduct = await this.shopifyApiService.fetchProductById(
+      product.shopifyProductId,
+    );
+    if (!shopifyProduct) {
+      throw new NotFoundException(
+        `Producto no encontrado en Shopify (id ${product.shopifyProductId})`,
+      );
+    }
+    return this.productSyncService.syncVariants(
+      product.id,
+      shopifyProduct.variants,
+      product.displayName,
+    );
   }
 
   @Get('pending-style')

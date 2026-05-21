@@ -15,7 +15,7 @@ import { AdminSyncController } from './admin-sync.controller';
 @Module({
   imports: [BullModule.registerQueue({ name: SHOPIFY_SYNC_QUEUE })],
   controllers: [ShopifyWebhooksController, AdminSyncController],
-  exports: [ShopifyApiService],
+  exports: [ShopifyApiService, ProductSyncService],
   providers: [
     ProductSyncService,
     SyncService,

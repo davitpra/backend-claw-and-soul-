@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { LinkVariantDto } from './dto/link-variant.dto';
 import { derivePreviewUrl } from '../styles/style-preview.util';
 
 const PRODUCT_INCLUDE = {
@@ -198,5 +199,44 @@ export class ProductsService {
   async hardDelete(id: string) {
     await this.findOne(id);
     return this.prisma.productReference.delete({ where: { id } });
+  }
+
+  async linkVariant(productRefId: string, dto: LinkVariantDto) {
+    await this.findOne(productRefId);
+    const format = await this.prisma.format.findUnique({
+      where: { id: dto.formatId },
+    });
+    if (!format) throw new NotFoundException('Format not found');
+
+    const linked = await this.prisma.productFormatVariant.upsert({
+      where: {
+        productRefId_shopifyVariantId: {
+          productRefId,
+          shopifyVariantId: dto.shopifyVariantId,
+        },
+      },
+      create: {
+        productRefId,
+        formatId: dto.formatId,
+        shopifyVariantId: dto.shopifyVariantId,
+        shopifyVariantTitle: dto.shopifyVariantTitle,
+        isActive: true,
+      },
+      update: {
+        formatId: dto.formatId,
+        shopifyVariantTitle: dto.shopifyVariantTitle,
+        isActive: true,
+      },
+      include: { format: { select: { id: true, displayName: true } } },
+    });
+
+    if (dto.shopifyVariantOption?.trim()) {
+      await this.prisma.format.update({
+        where: { id: dto.formatId },
+        data: { shopifyVariantOption: dto.shopifyVariantOption.trim() },
+      });
+    }
+
+    return linked;
   }
 }

@@ -5,6 +5,10 @@ import {
   ShopifyVariant,
 } from './dto/shopify-product.dto';
 
+function normalizeVariantOption(s: string | null | undefined): string {
+  return (s ?? '').trim().toLowerCase().replace(/×/g, 'x').replace(/\s+/g, '');
+}
+
 @Injectable()
 export class ProductSyncService {
   private readonly logger = new Logger(ProductSyncService.name);
@@ -59,7 +63,15 @@ export class ProductSyncService {
     let skipped = 0;
 
     const incomingVariantIds = variants.map((v) => String(v.id));
-    const formatCache = new Map<string, { id: string }>();
+
+    // Load all active formats with a shopifyVariantOption and index by normalized value
+    const allFormats = await this.prisma.format.findMany({
+      where: { isActive: true, shopifyVariantOption: { not: null } },
+      select: { id: true, shopifyVariantOption: true },
+    });
+    const formatByNormalized = new Map(
+      allFormats.map((f) => [normalizeVariantOption(f.shopifyVariantOption), f]),
+    );
 
     for (const variant of variants) {
       const sizeValue = variant.option1?.trim();
@@ -72,20 +84,13 @@ export class ProductSyncService {
         continue;
       }
 
-      let format = formatCache.get(sizeValue);
+      const format = formatByNormalized.get(normalizeVariantOption(sizeValue));
       if (!format) {
-        const found = await this.prisma.format.findFirst({
-          where: { shopifyVariantOption: sizeValue },
-        });
-        if (!found) {
-          this.logger.warn(
-            `Variant '${sizeValue}' of product '${productName}' has no configured format — skipping`,
-          );
-          skipped++;
-          continue;
-        }
-        formatCache.set(sizeValue, found);
-        format = found;
+        this.logger.warn(
+          `Variant '${sizeValue}' of product '${productName}' has no configured format — skipping`,
+        );
+        skipped++;
+        continue;
       }
 
       const shopifyVariantId = String(variant.id);

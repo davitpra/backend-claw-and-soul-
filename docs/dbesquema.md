@@ -1,6 +1,11 @@
 // ClawAndSoul - AI Pet Portrait E-Commerce Platform
-// Database Schema v5.0
-// Updated: May 20, 2026
+// Database Schema v6.0
+// Updated: May 21, 2026
+//
+// Cambios principales v6.0 (vs v5.0):
+//   - Se eliminó la tabla product_types.
+//   - product_references.product_type_id (FK) reemplazado por product_type varchar? (campo plano, sin FK).
+//   - Se añadió índice en product_references(product_type).
 //
 // Cambios principales v5.0 (vs v4.0):
 //   - Se añadió el módulo de Orders: Order, OrderItem, OrderEvent.
@@ -138,26 +143,6 @@ style_id
 }
 
 // ============================================
-// PRODUCT TYPES
-// ============================================
-
-Table product_types {
-id varchar [pk]
-name varchar [not null, unique, note: 'slug: poster, canvas, mug, tshirt, sticker']
-display_name varchar [not null, note: 'Póster, Lienzo, Taza, Camiseta, Sticker']
-description text
-is_active boolean
-created_at timestamp
-updated_at timestamp
-
-indexes {
-is_active
-}
-
-Note: 'Categoriza el tipo de producto físico. Se puebla vía seed y se deriva de Shopify product_type en el sync.'
-}
-
-// ============================================
 // FORMATS & PRODUCT REFERENCES
 // ============================================
 
@@ -188,7 +173,7 @@ name varchar [not null, note: 'slug derivado del handle de Shopify']
 display_name varchar [not null, note: 'e.g. Póster Acuarela']
 description text
 style_id varchar [ref: > styles.id, note: 'Estilo fijo de este producto. Null hasta que un admin lo asigna.']
-product_type_id varchar [ref: > product_types.id, note: 'Derivado de Shopify product_type en el sync.']
+product_type varchar [note: 'Campo plano derivado de Shopify product_type en el sync. Sin FK.']
 fulfillment_method varchar [not null, default: 'in_house', note: 'Enum: in_house | pod']
 is_active boolean
 created_at timestamp
@@ -197,9 +182,10 @@ updated_at timestamp
 indexes {
 is_active
 style_id
+product_type
 }
 
-Note: 'Espejo ligero de un producto de Shopify. Cada producto lleva un estilo fijo (style_id), un tipo (product_type_id) y un método de fulfillment (in_house | pod). El sync lo crea con style_id = null; un admin lo vincula manualmente. Sin estilo asignado el producto no aparece en el flujo de generación.'
+Note: 'Espejo ligero de un producto de Shopify. Cada producto lleva un estilo fijo (style_id), un tipo (product_type, campo plano) y un método de fulfillment (in_house | pod). El sync lo crea con style_id = null; un admin lo vincula manualmente. Sin estilo asignado el producto no aparece en el flujo de generación.'
 }
 
 Table product_format_variants {
@@ -423,7 +409,6 @@ status
 // ============================================
 //
 // Style            --<  ProductReference      (1 estilo, N productos que lo usan)
-// ProductType      --<  ProductReference      (1 tipo, N productos de ese tipo)
 // ProductReference --<  ProductFormatVariant  (1 producto, N tamaños disponibles)
 // Format           --<  ProductFormatVariant  (1 formato, N productos que lo ofrecen)
 //

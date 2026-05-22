@@ -46,6 +46,14 @@ export class AdminStylesController {
     return this.stylesService.findAllForAdmin();
   }
 
+  @Get(':styleId')
+  @ApiOperation({ summary: 'Get a single style with all fields and images (admin)' })
+  @ApiResponse({ status: 200, description: 'Style retrieved' })
+  @ApiResponse({ status: 404, description: 'Style not found' })
+  findOne(@Param('styleId') styleId: string) {
+    return this.stylesService.findOneForAdmin(styleId);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create a new style' })
   @ApiResponse({ status: 201, description: 'Style created successfully' })

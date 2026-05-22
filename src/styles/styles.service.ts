@@ -48,6 +48,22 @@ export class StylesService {
     return { ...style, previewUrl: derivePreviewUrl(style.images) };
   }
 
+  async findOneForAdmin(id: string) {
+    const style = await this.prisma.style.findUnique({
+      where: { id },
+      include: {
+        images: { orderBy: { orderIndex: 'asc' } },
+        _count: { select: { generations: true, productReferences: true } },
+      },
+    });
+
+    if (!style) {
+      throw new NotFoundException('Style not found');
+    }
+
+    return { ...style, previewUrl: derivePreviewUrl(style.images) };
+  }
+
   async findByCategory(category: string) {
     const styles = await this.prisma.style.findMany({
       where: { category, isActive: true },

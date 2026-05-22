@@ -172,6 +172,10 @@ export class OrdersService {
       if (ref) {
         productRefId = ref.id;
         fulfillmentMethod = ref.fulfillmentMethod;
+      } else {
+        this.logger.warn(
+          `shopifyProductId "${shopifyProductId}" not found in ProductReference — defaulting fulfillmentMethod to "in_house"`,
+        );
       }
     }
 
@@ -363,6 +367,38 @@ export class OrdersService {
         source: 'admin',
         userId: adminUserId ?? null,
         payload: tracking as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  async updateItemFulfillmentMethod(
+    orderId: string,
+    itemId: string,
+    fulfillmentMethod: 'in_house' | 'pod',
+    adminUserId?: string,
+  ): Promise<void> {
+    const item = await this.prisma.orderItem.findFirst({
+      where: { id: itemId, orderId },
+    });
+    if (!item) throw new NotFoundException('Order item not found');
+
+    await this.prisma.orderItem.update({
+      where: { id: itemId },
+      data: { fulfillmentMethod },
+    });
+
+    await this.prisma.orderEvent.create({
+      data: {
+        orderId,
+        orderItemId: itemId,
+        eventType: 'manual_resync',
+        source: 'admin',
+        userId: adminUserId ?? null,
+        payload: {
+          field: 'fulfillmentMethod',
+          from: item.fulfillmentMethod,
+          to: fulfillmentMethod,
+        } as unknown as Prisma.InputJsonValue,
       },
     });
   }

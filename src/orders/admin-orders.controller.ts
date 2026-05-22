@@ -112,6 +112,22 @@ export class AdminOrdersController {
     );
   }
 
+  @Patch(':id/items/:itemId/fulfillment')
+  @ApiOperation({ summary: 'Override fulfillment method of an order item (in_house | pod)' })
+  updateFulfillmentMethod(
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @Body('fulfillmentMethod') fulfillmentMethod: 'in_house' | 'pod',
+    @CurrentUser() user?: { id: string },
+  ) {
+    return this.ordersService.updateItemFulfillmentMethod(
+      orderId,
+      itemId,
+      fulfillmentMethod,
+      user?.id,
+    );
+  }
+
   @Patch(':id/items/:itemId/tracking')
   @ApiOperation({ summary: 'Set tracking info for an order item' })
   updateTracking(

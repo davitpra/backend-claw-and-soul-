@@ -27,6 +27,12 @@ export class UpdateFormatDto {
   @Min(1)
   height?: number;
 
+  @ApiProperty({ example: '1:1', required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  aspectRatio?: string;
+
   @ApiProperty({ example: true, required: false })
   @IsOptional()
   @IsBoolean()

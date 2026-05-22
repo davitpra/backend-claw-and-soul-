@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { LinkVariantDto } from './dto/link-variant.dto';
+import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
 import { derivePreviewUrl } from '../styles/style-preview.util';
 
 const PRODUCT_INCLUDE = {
@@ -238,5 +239,48 @@ export class ProductsService {
     }
 
     return linked;
+  }
+
+  async updateVariantLink(
+    productRefId: string,
+    shopifyVariantId: string,
+    dto: UpdateProductVariantDto,
+  ) {
+    await this.findOne(productRefId);
+
+    const existing = await this.prisma.productFormatVariant.findUnique({
+      where: {
+        productRefId_shopifyVariantId: { productRefId, shopifyVariantId },
+      },
+    });
+    if (!existing) throw new NotFoundException('Variant link not found');
+
+    if (dto.formatId !== undefined) {
+      const format = await this.prisma.format.findUnique({
+        where: { id: dto.formatId },
+      });
+      if (!format) throw new NotFoundException('Format not found');
+    }
+
+    const data: { formatId?: string; isActive?: boolean } = {};
+    if (dto.formatId !== undefined) data.formatId = dto.formatId;
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+
+    if (Object.keys(data).length === 0) {
+      return this.prisma.productFormatVariant.findUnique({
+        where: {
+          productRefId_shopifyVariantId: { productRefId, shopifyVariantId },
+        },
+        include: { format: { select: { id: true, displayName: true } } },
+      });
+    }
+
+    return this.prisma.productFormatVariant.update({
+      where: {
+        productRefId_shopifyVariantId: { productRefId, shopifyVariantId },
+      },
+      data,
+      include: { format: { select: { id: true, displayName: true } } },
+    });
   }
 }

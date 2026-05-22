@@ -19,6 +19,7 @@ import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { LinkVariantDto } from './dto/link-variant.dto';
+import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
@@ -64,6 +65,18 @@ export class AdminProductsController {
     return this.productsService.linkVariant(productId, dto);
   }
 
+  @Patch(':productId/variants/:shopifyVariantId')
+  @ApiOperation({ summary: 'Update an existing variant link (change format or toggle isActive)' })
+  @ApiResponse({ status: 200, description: 'Variant link updated' })
+  @ApiResponse({ status: 404, description: 'Product, variant link, or format not found' })
+  updateVariantLink(
+    @Param('productId') productId: string,
+    @Param('shopifyVariantId') shopifyVariantId: string,
+    @Body() dto: UpdateProductVariantDto,
+  ) {
+    return this.productsService.updateVariantLink(productId, shopifyVariantId, dto);
+  }
+
   @Get(':productId/variants')
   @ApiOperation({
     summary: 'Get linked and unlinked Shopify variants for a product',
@@ -84,7 +97,7 @@ export class AdminProductsController {
     });
 
     const linkedVariantsMap = new Map(
-      dbVariants.filter((v) => v.isActive).map((v) => [v.shopifyVariantId, v]),
+      dbVariants.map((v) => [v.shopifyVariantId, v]),
     );
 
     // Fetch live variants from Shopify
@@ -96,14 +109,12 @@ export class AdminProductsController {
       // Shopify unreachable — return only what we have in DB
       return {
         product: { id: product.id, displayName: product.displayName },
-        linkedVariants: dbVariants
-          .filter((v) => v.isActive)
-          .map((v) => ({
-            format: { id: v.format.id, displayName: v.format.displayName },
-            shopifyVariantId: v.shopifyVariantId,
-            shopifyVariantTitle: v.shopifyVariantTitle,
-            isActive: v.isActive,
-          })),
+        linkedVariants: dbVariants.map((v) => ({
+          format: { id: v.format.id, displayName: v.format.displayName },
+          shopifyVariantId: v.shopifyVariantId,
+          shopifyVariantTitle: v.shopifyVariantTitle,
+          isActive: v.isActive,
+        })),
         unlinkedVariants: [],
       };
     }

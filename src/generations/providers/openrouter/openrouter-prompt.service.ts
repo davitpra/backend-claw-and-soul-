@@ -11,17 +11,24 @@ interface OpenRouterVisionOutput {
   };
 }
 
+const DEFAULT_SYSTEM_PROMPT =
+  'You are an expert prompt engineer for AI image generation models. ' +
+  'Be precise, avoid speculation, and base all descriptions strictly on visible elements in the image. ' +
+  'Output ONLY the final prompt text in English — no preamble, no quotes, no markdown, no explanation.';
+const DEFAULT_MAX_TOKENS = 400;
+
 export interface OpenRouterPromptInput {
   photoUrl: string;
-  /** Art direction instruction / base prompt template (with [rellenar] and [Name] placeholders). */
+  /** Full prompt sent to the VLM. Supports {{petName}}, {{petSpecies}}, {{petBreed}},
+   *  plus any key from templateVars (e.g. {{maxPets}}, {{colorCount}}). */
   promptTemplate: string;
-  /** Example description style to guide the VLM (e.g. "of a gray short-haired cat with large, round, green eyes"). */
-  descriptionExample?: string | null;
-  /** Server-side variables substituted into promptTemplate before sending to VLM (e.g. { colorCount: 5 }). */
+  /** Runtime + admin-defined variables merged by the caller. */
   templateVars?: Record<string, unknown> | null;
   petContext: { name: string; species: string; breed?: string | null };
   visionModel?: string | null;
   temperature?: number;
+  systemPrompt?: string | null;
+  maxTokens?: number | null;
 }
 
 export interface OpenRouterPromptResult {
@@ -59,13 +66,10 @@ export class OpenRouterPromptService {
         input: {
           image_urls: [input.photoUrl],
           model,
-          system_prompt:
-            'You are an expert prompt engineer for AI image generation models. ' +
-            'Be precise, avoid speculation, and base all descriptions strictly on visible elements in the image. ' +
-            'Output ONLY the final prompt text in English — no preamble, no quotes, no markdown, no explanation.',
+          system_prompt: input.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
           prompt: this.composeUserPrompt(input),
           temperature: input.temperature ?? 0.7,
-          max_tokens: 400,
+          max_tokens: input.maxTokens ?? DEFAULT_MAX_TOKENS,
         },
       },
     )) as unknown as { data: OpenRouterVisionOutput; requestId: string };
@@ -91,35 +95,22 @@ export class OpenRouterPromptService {
   }
 
   private composeUserPrompt(input: OpenRouterPromptInput): string {
-    const { promptTemplate, descriptionExample, templateVars, petContext } =
-      input;
-
-    // Substitute server-side {placeholders} from templateVars
-    const resolvedTemplate = this.applyTemplateVars(
-      promptTemplate,
-      templateVars ?? {},
-    );
-
-    const exampleLine = descriptionExample
-      ? `La descripción debe seguir este estilo: "${descriptionExample}".`
-      : 'Describe el rostro del animal con detalle visual (color de pelo, ojos, rasgos distintivos).';
-
-    return [
-      `Escribe únicamente el prompt final en inglés. Sustituye [description] con una descripción detallada solo del rostro del animal en la imagen (ignora completamente la pose o el cuerpo). Usa el nombre "${petContext.name}" donde dice [Name].`,
-      '',
-      exampleLine,
-      '',
-      'Prompt base:',
-      resolvedTemplate,
-    ].join('\n');
+    const vars: Record<string, unknown> = {
+      ...(input.templateVars ?? {}),
+      // Runtime context always wins over templateVars on key collision
+      petName: input.petContext.name,
+      petSpecies: input.petContext.species,
+      petBreed: input.petContext.breed ?? '',
+    };
+    return this.applyTemplateVars(input.promptTemplate, vars);
   }
 
-  /** Replaces {key} placeholders using templateVars. Keys without a matching var are left as-is. */
+  /** Replaces {{key}} placeholders. Unknown keys are left as-is. */
   private applyTemplateVars(
     template: string,
     vars: Record<string, unknown>,
   ): string {
-    return template.replace(/\{(\w+)\}/g, (match, key: string) => {
+    return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
       const val: unknown = vars[key];
       if (
         typeof val === 'string' ||

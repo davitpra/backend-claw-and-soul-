@@ -3,6 +3,7 @@ import {
   IsString,
   IsOptional,
   IsBoolean,
+  IsObject,
   MaxLength,
   IsUUID,
 } from 'class-validator';
@@ -35,6 +36,20 @@ export class CreateStyleDto {
   @IsOptional()
   @IsString()
   strategyKey?: string;
+
+  @ApiProperty({
+    description:
+      'Prompt completo enviado al VLM. Placeholders: {{petName}}, {{petSpecies}}, {{petBreed}}, {{maxPets}} y cualquier key definida en templateVars.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  promptTemplate?: string;
+
+  @ApiProperty({ example: { colorCount: 5 }, required: false })
+  @IsOptional()
+  @IsObject()
+  templateVars?: Record<string, any>;
 
   @ApiProperty({
     example: 'uuid-of-vision-config',

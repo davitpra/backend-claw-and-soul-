@@ -33,7 +33,9 @@ export class VisionConfigsService {
 
   async create(dto: CreateVisionConfigDto) {
     try {
-      return await this.prisma.visionConfig.create({ data: dto });
+      return await this.prisma.visionConfig.create({
+        data: dto,
+      });
     } catch (e: any) {
       if (e?.code === 'P2002') {
         throw new ConflictException(

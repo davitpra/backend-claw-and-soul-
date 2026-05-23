@@ -3,7 +3,7 @@ import {
   IsString,
   IsOptional,
   IsNumber,
-  IsObject,
+  IsInt,
   IsBoolean,
   MaxLength,
   Min,
@@ -34,25 +34,24 @@ export class CreateVisionConfigDto {
   visionTemperature?: number;
 
   @ApiProperty({
-    example: 'A watercolor portrait of [description] named [Name]...',
+    description:
+      'System prompt enviado al VLM. Si es null, se usa el default de DEFAULT_VISION_SYSTEM_PROMPT en el servicio.',
     required: false,
   })
   @IsOptional()
   @IsString()
-  promptTemplate?: string;
+  systemPrompt?: string;
 
   @ApiProperty({
-    example: 'of a fluffy golden retriever with soft brown eyes...',
+    example: 400,
+    description:
+      'Límite de tokens de salida del VLM. Si es null, se usa el default (400) en el servicio.',
     required: false,
   })
   @IsOptional()
-  @IsString()
-  descriptionExample?: string;
-
-  @ApiProperty({ example: { colorCount: 5 }, required: false })
-  @IsOptional()
-  @IsObject()
-  templateVars?: Record<string, any>;
+  @IsInt()
+  @Min(1)
+  maxTokens?: number;
 
   @ApiProperty({ example: true, required: false })
   @IsOptional()

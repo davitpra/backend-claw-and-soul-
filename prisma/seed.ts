@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import {
+  DEFAULT_PROMPT_TEMPLATE,
+  DEFAULT_VISION_MAX_TOKENS,
+  DEFAULT_VISION_SYSTEM_PROMPT,
+} from '../src/vision-configs/vision-configs.constants';
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -39,7 +44,8 @@ async function main() {
       description: 'Default Gemini Flash vision configuration',
       visionModel: 'google/gemini-2.5-flash',
       visionTemperature: 0.7,
-      promptTemplate: 'A [description] pet portrait in the style requested. The pet is named [Name].',
+      systemPrompt: DEFAULT_VISION_SYSTEM_PROMPT,
+      maxTokens: DEFAULT_VISION_MAX_TOKENS,
     },
   });
 
@@ -75,6 +81,7 @@ async function main() {
         category: styleData.category,
         isActive: true,
         strategyKey: 'default',
+        promptTemplate: DEFAULT_PROMPT_TEMPLATE,
         visionConfigId: defaultVisionConfig.id,
         imageGenConfigId: defaultImageGenConfig.id,
       },

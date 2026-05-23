@@ -104,11 +104,10 @@ model VisionConfig {
   name               String   @unique
   description        String?  @db.Text
 
-  visionModel        String?  @map("vision_model")
-  visionTemperature  Float?   @map("vision_temperature")
-  promptTemplate     String?  @map("prompt_template") @db.Text
-  descriptionExample String?  @map("description_example") @db.Text
-  templateVars       Json?    @map("template_vars")
+  visionModel       String?  @map("vision_model")
+  visionTemperature Float?   @map("vision_temperature")
+  systemPrompt      String?  @map("system_prompt") @db.Text
+  maxTokens         Int?     @map("max_tokens")
 
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
@@ -155,6 +154,8 @@ model Style {
 
   // Pipeline config
   strategyKey      String  @default("default") @map("strategy_key")
+  promptTemplate   String  @map("prompt_template") @db.Text
+  templateVars     Json?   @map("template_vars")
   visionConfigId   String? @map("vision_config_id")
   imageGenConfigId String? @map("image_gen_config_id")
 

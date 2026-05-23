@@ -57,14 +57,15 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
       );
     }
 
-    const promptTemplate = visionConfig.promptTemplate ?? null;
-    const descriptionExample = visionConfig.descriptionExample ?? null;
-    const templateVars = (visionConfig.templateVars ?? null) as Record<
+    const promptTemplate = style.promptTemplate;
+    const templateVars = (style.templateVars ?? null) as Record<
       string,
       unknown
     > | null;
     const visionModel = visionConfig.visionModel ?? null;
     const visionTemperature = visionConfig.visionTemperature ?? null;
+    const visionSystemPrompt = visionConfig.systemPrompt ?? null;
+    const visionMaxTokens = visionConfig.maxTokens ?? null;
     const falModel = imageGenConfig.model ?? null;
     const falParameters = (imageGenConfig.parameters ?? {}) as Record<
       string,
@@ -81,20 +82,19 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
       visionConfigId: visionConfig.id,
       imageGenConfigId: imageGenConfig.id,
       promptTemplate,
-      descriptionExample,
       templateVars: mergedTemplateVars,
       visionModel,
       visionTemperature,
+      visionSystemPrompt,
+      visionMaxTokens,
       falModel,
       constraints: ctx.constraints,
     };
 
     // Step 1 — Vision + prompt generation via OpenRouter VLM
-    // templateVars parece que no definido en la base de datos.
     const visionResult = await this.openRouterPrompt.buildPrompt({
       photoUrl: ctx.petPhotoUrl,
-      promptTemplate: promptTemplate ?? '',
-      descriptionExample,
+      promptTemplate,
       templateVars: mergedTemplateVars,
       petContext: {
         name: ctx.pet.name,
@@ -103,6 +103,8 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
       },
       visionModel,
       temperature: visionTemperature ?? undefined,
+      systemPrompt: visionSystemPrompt,
+      maxTokens: visionMaxTokens,
     });
 
     const prompt = visionResult.prompt;

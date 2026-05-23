@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { DEFAULT_PROMPT_TEMPLATE } from '../vision-configs/vision-configs.constants';
 import { v4 as uuidv4 } from 'uuid';
 import { CreateStyleDto } from './dto/create-style.dto';
 import { UpdateStyleDto } from './dto/update-style.dto';
@@ -115,7 +116,12 @@ export class StylesService {
 
   async create(dto: CreateStyleDto) {
     try {
-      return await this.prisma.style.create({ data: dto });
+      return await this.prisma.style.create({
+        data: {
+          ...dto,
+          promptTemplate: dto.promptTemplate ?? DEFAULT_PROMPT_TEMPLATE,
+        },
+      });
     } catch (e: any) {
       if (e?.code === 'P2003') {
         throw new BadRequestException(

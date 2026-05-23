@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsOptional, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class UpdateStyleImageDto {
   @ApiProperty({ required: false })
@@ -12,4 +12,9 @@ export class UpdateStyleImageDto {
   @IsInt()
   @Min(0)
   orderIndex?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  altImage?: string;
 }

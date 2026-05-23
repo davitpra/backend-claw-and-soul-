@@ -7,7 +7,9 @@ export class UpdateProductVariantDto {
   @IsOptional()
   formatId?: string;
 
-  @ApiPropertyOptional({ description: 'Activate or deactivate the variant link' })
+  @ApiPropertyOptional({
+    description: 'Activate or deactivate the variant link',
+  })
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;

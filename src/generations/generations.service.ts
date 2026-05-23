@@ -238,7 +238,7 @@ export class GenerationsService {
     const generation = await this.prisma.generation.findUnique({
       where: { id: generationId },
       include: {
-        style: true,
+        style: { include: { visionConfig: true, imageGenConfig: true } },
         pet: true,
         petPhoto: true,
         format: true,

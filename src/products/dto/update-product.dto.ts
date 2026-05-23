@@ -9,7 +9,11 @@ export class UpdateProductDto extends PartialType(CreateProductDto) {
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiProperty({ example: 'in_house', enum: ['in_house', 'pod'], required: false })
+  @ApiProperty({
+    example: 'in_house',
+    enum: ['in_house', 'pod'],
+    required: false,
+  })
   @IsOptional()
   @IsString()
   @IsIn(['in_house', 'pod'])

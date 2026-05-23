@@ -66,15 +66,25 @@ export class AdminProductsController {
   }
 
   @Patch(':productId/variants/:shopifyVariantId')
-  @ApiOperation({ summary: 'Update an existing variant link (change format or toggle isActive)' })
+  @ApiOperation({
+    summary:
+      'Update an existing variant link (change format or toggle isActive)',
+  })
   @ApiResponse({ status: 200, description: 'Variant link updated' })
-  @ApiResponse({ status: 404, description: 'Product, variant link, or format not found' })
+  @ApiResponse({
+    status: 404,
+    description: 'Product, variant link, or format not found',
+  })
   updateVariantLink(
     @Param('productId') productId: string,
     @Param('shopifyVariantId') shopifyVariantId: string,
     @Body() dto: UpdateProductVariantDto,
   ) {
-    return this.productsService.updateVariantLink(productId, shopifyVariantId, dto);
+    return this.productsService.updateVariantLink(
+      productId,
+      shopifyVariantId,
+      dto,
+    );
   }
 
   @Get(':productId/variants')
@@ -190,7 +200,10 @@ export class AdminProductsController {
     summary: 'Re-fetch Shopify variants for a product and auto-link to formats',
   })
   @ApiResponse({ status: 200, description: 'Variants resynced' })
-  @ApiResponse({ status: 404, description: 'Product not found in DB or Shopify' })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found in DB or Shopify',
+  })
   async syncVariants(@Param('productId') productId: string) {
     const product = await this.productsService.findOne(productId);
     const shopifyProduct = await this.shopifyApiService.fetchProductById(

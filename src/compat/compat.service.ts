@@ -44,7 +44,7 @@ export class CompatService {
     const { images, ...styleRest } = product.style;
     const style = { ...styleRest, previewUrl: derivePreviewUrl(images) };
 
-    return [style].sort((a, b) => a.sortOrder - b.sortOrder);
+    return [style];
   }
 
   // --- Flujo 2: estilo → formatos disponibles ---

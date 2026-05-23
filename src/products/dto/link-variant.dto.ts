@@ -16,7 +16,11 @@ export class LinkVariantDto {
   @IsUUID()
   formatId: string;
 
-  @ApiPropertyOptional({ example: '8x10', description: 'Shopify option1 value to persist on the Format for future auto-linking' })
+  @ApiPropertyOptional({
+    example: '8x10',
+    description:
+      'Shopify option1 value to persist on the Format for future auto-linking',
+  })
   @IsString()
   @IsOptional()
   shopifyVariantOption?: string;

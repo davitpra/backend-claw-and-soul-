@@ -70,7 +70,10 @@ export class ProductSyncService {
       select: { id: true, shopifyVariantOption: true },
     });
     const formatByNormalized = new Map(
-      allFormats.map((f) => [normalizeVariantOption(f.shopifyVariantOption), f]),
+      allFormats.map((f) => [
+        normalizeVariantOption(f.shopifyVariantOption),
+        f,
+      ]),
     );
 
     for (const variant of variants) {

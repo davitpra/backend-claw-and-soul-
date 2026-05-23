@@ -1,67 +1,65 @@
+import 'dotenv/config';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   console.log('🌱 Seeding database...');
 
-  // NOTE: Formats, products and Shopify variants are managed by the Shopify sync
-  // service, not by this seed. Do not add them here. Product types are now a
-  // string column on ProductReference, synced from Shopify on upsert.
+  // NOTE: This seed creates the base format catalog (sizes/aspect-ratios).
+  // ProductFormatVariants and ProductReferences are still managed by the Shopify
+  // sync service. Product types are a string column on ProductReference, synced
+  // from Shopify on upsert.
 
   // ============================================
   // STYLES
   // ============================================
   console.log('🎨 Creating styles...');
 
+  // Seed a default ImageGenConfig and VisionConfig used by all seed styles
+  const defaultImageGenConfig = await prisma.imageGenConfig.upsert({
+    where: { name: 'flux-dev-default' },
+    update: {},
+    create: {
+      name: 'flux-dev-default',
+      description: 'Default Fal.ai Flux Dev configuration',
+      provider: 'fal',
+      model: 'fal-ai/flux/dev',
+      parameters: { num_inference_steps: 28 },
+    },
+  });
+
+  const defaultVisionConfig = await prisma.visionConfig.upsert({
+    where: { name: 'gemini-flash-default' },
+    update: {},
+    create: {
+      name: 'gemini-flash-default',
+      description: 'Default Gemini Flash vision configuration',
+      visionModel: 'google/gemini-2.5-flash',
+      visionTemperature: 0.7,
+      promptTemplate: 'A [description] pet portrait in the style requested. The pet is named [Name].',
+    },
+  });
+
+  console.log('  ✓ Default VisionConfig and ImageGenConfig created');
+
   const stylesData = [
     {
       name: 'watercolor_portrait',
       displayName: 'Acuarela',
-      description:
-        'Retrato artístico en acuarela con colores suaves y transparentes. Ideal para capturar la personalidad de tu mascota con un toque artesanal.',
       category: 'classic',
-      sortOrder: 1,
-      parameters: {
-        model: 'stable-diffusion-xl',
-        style_preset: 'watercolor',
-        cfg_scale: 7,
-        steps: 30,
-        prompt_prefix: 'beautiful watercolor painting of a pet, soft colors, artistic, detailed fur texture,',
-        negative_prompt: 'ugly, blurry, low quality, distorted',
-      },
     },
     {
       name: 'neon_glow',
       displayName: 'Neón Brillante',
-      description:
-        'Estética neón vibrante con fondo oscuro y detalles luminosos. Un retrato cyberpunk único que hará destacar a tu mascota.',
       category: 'modern',
-      sortOrder: 5,
-      parameters: {
-        model: 'stable-diffusion-xl',
-        style_preset: 'neon',
-        cfg_scale: 9,
-        steps: 35,
-        prompt_prefix: 'neon glow portrait of a pet, dark background, vibrant neon lights, cyberpunk aesthetic, glowing,',
-        negative_prompt: 'bright background, dull colors, low quality, blurry',
-      },
     },
     {
       name: 'flat_modern_illustration',
       displayName: 'Flat Modern Illustration',
-      description:
-        'A clean digital style using flat colors, simple geometric shapes, minimal shadows, and stylized figures. Bold, limited palettes with no gradients or realistic textures. ',
       category: 'elegant',
-      sortOrder: 12,
-      parameters: {
-        model: 'stable-diffusion-xl',
-        style_preset: 'pop-art',
-        cfg_scale: 9,
-        steps: 35,
-        prompt_prefix: 'pop art portrait of a pet, Andy Warhol style, bold colors, flat shading, iconic, graphic design,',
-        negative_prompt: 'realistic, subtle, blurry, ugly, low quality',
-      },
     },
   ];
 
@@ -74,17 +72,49 @@ async function main() {
       create: {
         name: styleData.name,
         displayName: styleData.displayName,
-        description: styleData.description,
         category: styleData.category,
-        sortOrder: styleData.sortOrder,
-        parameters: styleData.parameters,
         isActive: true,
+        strategyKey: 'default',
+        visionConfigId: defaultVisionConfig.id,
+        imageGenConfigId: defaultImageGenConfig.id,
       },
     });
     createdStyles[styleData.name] = style;
   }
 
   console.log(`  ✓ ${Object.keys(createdStyles).length} styles upserted`);
+
+  // ============================================
+  // FORMATS
+  // ============================================
+  // Base catalog of print sizes. The Shopify sync matches incoming variant
+  // option1 values against shopifyVariantOption (case-insensitive, spaces
+  // stripped) to create ProductFormatVariants. width/height are informational
+  // pixel dimensions (~1MP per aspect ratio); Fal.ai receives only aspectRatio.
+  console.log('📐 Creating formats...');
+
+  const formatsData = [
+    { name: 'portrait_8x10',  displayName: '8x10 Retrato',   aspectRatio: '4:5', width: 1024, height: 1280, shopifyVariantOption: '8x10'  },
+    { name: 'portrait_12x16', displayName: '12x16 Retrato',  aspectRatio: '3:4', width: 1024, height: 1365, shopifyVariantOption: '12x16' },
+    { name: 'portrait_16x20', displayName: '16x20 Retrato',  aspectRatio: '4:5', width: 1024, height: 1280, shopifyVariantOption: '16x20' },
+    { name: 'portrait_18x24', displayName: '18x24 Retrato',  aspectRatio: '3:4', width: 1024, height: 1365, shopifyVariantOption: '18x24' },
+    { name: 'portrait_20x30', displayName: '20x30 Retrato',  aspectRatio: '2:3', width: 1024, height: 1536, shopifyVariantOption: '20x30' },
+    { name: 'portrait_24x32', displayName: '24x32 Retrato',  aspectRatio: '3:4', width: 1024, height: 1365, shopifyVariantOption: '24x32' },
+    { name: 'portrait_24x36', displayName: '24x36 Retrato',  aspectRatio: '2:3', width: 1024, height: 1536, shopifyVariantOption: '24x36' },
+    { name: 'museum_20x25',   displayName: '20x25 Museo',    aspectRatio: '4:5', width: 1024, height: 1280, shopifyVariantOption: '20x25' },
+    { name: 'museum_30x45',   displayName: '30x45 Museo',    aspectRatio: '2:3', width: 1024, height: 1536, shopifyVariantOption: '30x45' },
+    { name: 'museum_40x50',   displayName: '40x50 Museo',    aspectRatio: '4:5', width: 1024, height: 1280, shopifyVariantOption: '40x50' },
+  ];
+
+  for (const fmt of formatsData) {
+    await prisma.format.upsert({
+      where: { name: fmt.name },
+      update: {},
+      create: { ...fmt, isActive: true },
+    });
+  }
+
+  console.log(`  ✓ ${formatsData.length} formats upserted`);
 
   // ============================================
   // PRODUCT FORMAT VARIANT CONSTRAINTS
@@ -179,6 +209,7 @@ async function main() {
 
   console.log('\n✅ Seeding completed successfully!');
   console.log(`   - Styles: ${Object.keys(createdStyles).length}`);
+  console.log(`   - Formats: ${formatsData.length}`);
   console.log(`   - Variant constraints: ${constraintsUpdated} updated`);
 }
 

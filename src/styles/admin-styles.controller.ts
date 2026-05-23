@@ -47,7 +47,9 @@ export class AdminStylesController {
   }
 
   @Get(':styleId')
-  @ApiOperation({ summary: 'Get a single style with all fields and images (admin)' })
+  @ApiOperation({
+    summary: 'Get a single style with all fields and images (admin)',
+  })
   @ApiResponse({ status: 200, description: 'Style retrieved' })
   @ApiResponse({ status: 404, description: 'Style not found' })
   findOne(@Param('styleId') styleId: string) {
@@ -85,21 +87,21 @@ export class AdminStylesController {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary' },
-        caption: { type: 'string' },
+        alt_image: { type: 'string' },
         order_index: { type: 'integer' },
       },
       required: ['file'],
     },
   })
   @ApiOperation({ summary: 'Upload an image to the style catalog' })
-  @ApiQuery({ name: 'caption', required: false, type: String })
+  @ApiQuery({ name: 'alt_image', required: false, type: String })
   @ApiQuery({ name: 'order_index', required: false, type: Number })
   @ApiResponse({ status: 201, description: 'Image uploaded successfully' })
   @ApiResponse({ status: 404, description: 'Style not found' })
   addImage(
     @Param('styleId') styleId: string,
     @UploadedFile() file: Express.Multer.File,
-    @Query('caption') caption?: string,
+    @Query('alt_image') altImage?: string,
     @Query('order_index', new DefaultValuePipe(0), ParseIntPipe)
     orderIndex?: number,
   ) {
@@ -110,7 +112,7 @@ export class AdminStylesController {
       throw new BadRequestException('File must be an image');
     }
 
-    return this.stylesService.addImage(styleId, file, caption, orderIndex);
+    return this.stylesService.addImage(styleId, file, altImage, orderIndex);
   }
 
   @Patch(':styleId/images/:imgId')

@@ -107,7 +107,6 @@ export class OpenRouterPromptService {
     return [
       `Escribe únicamente el prompt final en inglés. Sustituye [description] con una descripción detallada solo del rostro del animal en la imagen (ignora completamente la pose o el cuerpo). Usa el nombre "${petContext.name}" donde dice [Name].`,
       '',
-      'La descripción debe seguir el siguiente estilo:',
       exampleLine,
       '',
       'Prompt base:',

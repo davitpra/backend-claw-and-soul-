@@ -1,6 +1,15 @@
 // ClawAndSoul - AI Pet Portrait E-Commerce Platform
-// Database Schema v6.0
-// Updated: May 21, 2026
+// Database Schema v7.0
+// Updated: May 22, 2026
+//
+// Cambios principales v7.0 (vs v6.0):
+//   - Se extrajo la configuración de pipeline de IA de `styles` a dos tablas nuevas:
+//       · vision_configs    → modelo de visión, temperatura, prompt template, template_vars, description_example.
+//       · image_gen_configs → proveedor (fal, etc.), modelo de imagen y parameters.
+//   - `styles` ahora referencia ambas vía vision_config_id e image_gen_config_id (FK opcionales, onDelete: SetNull).
+//   - Se eliminaron de `styles` las columnas: description, parameters, sort_order, fal_model,
+//     prompt_template, vision_model, vision_temperature, description_example, template_vars.
+//   - `style_images.caption` se renombró a `alt_image`.
 //
 // Cambios principales v6.0 (vs v5.0):
 //   - Se eliminó la tabla product_types.
@@ -90,6 +99,48 @@ pet_id
 }
 
 // ============================================
+// AI PIPELINE CONFIG
+// ============================================
+
+Table vision_configs {
+id varchar [pk]
+name varchar [not null, unique]
+description text
+vision_model varchar [note: 'Modelo de visión que analiza la foto de la mascota']
+vision_temperature float
+prompt_template text [note: 'Template del prompt con placeholders sustituidos en tiempo de generación']
+description_example text
+template_vars json [note: 'Variables disponibles para sustituir en prompt_template']
+is_active boolean
+created_at timestamp
+updated_at timestamp
+
+indexes {
+is_active
+}
+
+Note: 'Configuración reutilizable para la etapa de visión: define qué modelo analiza la foto del pet y con qué prompt template / variables. Es referenciada por N styles (1 config → muchos estilos).'
+}
+
+Table image_gen_configs {
+id varchar [pk]
+name varchar [not null, unique]
+description text
+provider varchar [not null, default: 'fal', note: 'Proveedor de generación de imagen: fal, etc.']
+model varchar [note: 'ID del modelo del proveedor, e.g. fal-ai/flux/dev']
+parameters json [note: 'Parámetros específicos del proveedor/modelo (steps, guidance_scale, etc.)']
+is_active boolean
+created_at timestamp
+updated_at timestamp
+
+indexes {
+is_active
+}
+
+Note: 'Configuración reutilizable para la etapa de generación de imagen: define proveedor, modelo y parámetros. Es referenciada por N styles.'
+}
+
+// ============================================
 // STYLES & STYLE IMAGES
 // ============================================
 
@@ -97,32 +148,26 @@ Table styles {
 id varchar [pk]
 name varchar [not null, unique]
 display_name varchar [not null]
-description text
 category varchar [not null, note: 'Familia artística: classic, modern, elegant, etc.']
 thanks_url varchar
 is_active boolean
-parameters json
-sort_order int
 created_at timestamp
 updated_at timestamp
 
 // Pipeline config
 strategy_key varchar [not null, default: 'default']
-fal_model varchar
-prompt_template text
-vision_model varchar
-vision_temperature float
-description_example text
-template_vars json
+vision_config_id varchar [ref: > vision_configs.id, note: 'FK opcional. onDelete: SetNull']
+image_gen_config_id varchar [ref: > image_gen_configs.id, note: 'FK opcional. onDelete: SetNull']
 
 indexes {
 category
 is_active
-sort_order
 (category, is_active)
+vision_config_id
+image_gen_config_id
 }
 
-Note: 'Un Style define la config de IA (prompt, modelo fal, parámetros). Es reutilizado por múltiples ProductReferences (ej. "Acuarela" en Póster Acuarela y en Taza Acuarela).'
+Note: 'Un Style representa una identidad artística reutilizable por múltiples ProductReferences (ej. "Acuarela" en Póster Acuarela y en Taza Acuarela). La config de pipeline de IA vive en vision_configs (etapa de visión) e image_gen_configs (etapa de generación); strategy_key elige qué estrategia las orquesta.'
 }
 
 Table style_images {
@@ -130,7 +175,7 @@ id varchar [pk]
 style_id varchar [not null, ref: > styles.id]
 image_url varchar [not null]
 storage_key varchar [not null]
-caption varchar
+alt_image varchar
 order_index int [not null]
 is_primary boolean
 created_at timestamp
@@ -408,6 +453,8 @@ status
 // RELACIONES CLAVE (resumen)
 // ============================================
 //
+// VisionConfig     --<  Style                 (1 config de visión, N estilos que la usan)
+// ImageGenConfig   --<  Style                 (1 config de generación, N estilos que la usan)
 // Style            --<  ProductReference      (1 estilo, N productos que lo usan)
 // ProductReference --<  ProductFormatVariant  (1 producto, N tamaños disponibles)
 // Format           --<  ProductFormatVariant  (1 formato, N productos que lo ofrecen)

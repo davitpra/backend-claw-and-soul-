@@ -2,10 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsString,
   IsOptional,
-  IsInt,
-  IsObject,
+  IsBoolean,
   MaxLength,
-  Min,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateStyleDto {
@@ -25,14 +24,6 @@ export class CreateStyleDto {
   category: string;
 
   @ApiProperty({
-    example: 'A classic watercolor painting style',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @ApiProperty({
     example: 'https://cdn.example.com/thanks/watercolor.jpg',
     required: false,
   })
@@ -40,14 +31,31 @@ export class CreateStyleDto {
   @IsString()
   thanksUrl?: string;
 
-  @ApiProperty({ example: { steps: 30, cfg_scale: 7 }, required: false })
+  @ApiProperty({ example: 'default', required: false })
   @IsOptional()
-  @IsObject()
-  parameters?: Record<string, any>;
+  @IsString()
+  strategyKey?: string;
 
-  @ApiProperty({ example: 0, required: false })
+  @ApiProperty({
+    example: 'uuid-of-vision-config',
+    description: 'ID of the VisionConfig to use for this style',
+    required: false,
+  })
   @IsOptional()
-  @IsInt()
-  @Min(0)
-  sortOrder?: number;
+  @IsString()
+  visionConfigId?: string;
+
+  @ApiProperty({
+    example: 'uuid-of-image-gen-config',
+    description: 'ID of the ImageGenConfig to use for this style',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  imageGenConfigId?: string;
+
+  @ApiProperty({ example: true, required: false })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

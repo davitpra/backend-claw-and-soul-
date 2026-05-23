@@ -1,10 +1,11 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { Style, Pet, PetPhoto, Format } from '@prisma/client';
+import { Pet, PetPhoto, Format } from '@prisma/client';
 import { GenerationsService } from '../generations.service';
 import { StrategyRegistry } from '../pipeline/strategy.registry';
 import { QUEUE_NAMES, JOB_NAMES } from '../constants/queues.constants';
+import { StyleWithConfigs } from '../pipeline/pipeline.types';
 
 interface GenerateJobData {
   generationId: string;
@@ -14,7 +15,7 @@ interface GenerationWithRelations {
   id: string;
   prompt: string | null;
   metadata: { compatConstraints?: Record<string, any> } | null;
-  style: Style;
+  style: StyleWithConfigs;
   pet: Pet;
   petPhoto: PetPhoto | null;
   format: Format | null;

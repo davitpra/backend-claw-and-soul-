@@ -1,9 +1,21 @@
-import { Style, Pet, PetPhoto, Format } from '@prisma/client';
+import {
+  Style,
+  Pet,
+  PetPhoto,
+  Format,
+  VisionConfig,
+  ImageGenConfig,
+} from '@prisma/client';
+
+export type StyleWithConfigs = Style & {
+  visionConfig: VisionConfig | null;
+  imageGenConfig: ImageGenConfig | null;
+};
 
 export interface PipelineContext {
   generationId: string;
   petPhotoUrl: string;
-  style: Style;
+  style: StyleWithConfigs;
   pet: Pet;
   format: Format | null;
   constraints: {
@@ -38,7 +50,7 @@ export interface GenerationWithRelations {
   prompt: string;
   provider: string;
   metadata: any;
-  style: Style;
+  style: StyleWithConfigs;
   pet: Pet;
   petPhoto: PetPhoto | null;
 }

@@ -26,6 +26,7 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
   async execute(ctx: PipelineContext): Promise<PipelineResult> {
     const start = Date.now();
 
+    // Si Muck_AI=true, se omiten OpenRouter y Fal.ai, y se devuelve un resultado simulado para facilitar pruebas sin consumir créditos de IA ni hacer uploads a Cloudinary
     if (this.configService.get<boolean>('ai.mock')) {
       this.logger.warn(
         `[${ctx.generationId}] MOCK_AI=true — bypassing OpenRouter + Fal.ai, returning stub result`,
@@ -41,16 +42,34 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
       };
     }
 
+    // Extraemos la configuración de la style para usarla en el pipeline
     const { style } = ctx;
-    const promptTemplate = style.promptTemplate ?? null;
-    const descriptionExample = style.descriptionExample ?? null;
-    const templateVars = (style.templateVars ?? null) as Record<
+    const { visionConfig, imageGenConfig } = style;
+
+    if (!visionConfig) {
+      throw new Error(
+        `Style "${style.name}" requires a visionConfig for strategy "default"`,
+      );
+    }
+    if (!imageGenConfig) {
+      throw new Error(
+        `Style "${style.name}" requires an imageGenConfig for strategy "default"`,
+      );
+    }
+
+    const promptTemplate = visionConfig.promptTemplate ?? null;
+    const descriptionExample = visionConfig.descriptionExample ?? null;
+    const templateVars = (visionConfig.templateVars ?? null) as Record<
       string,
       unknown
     > | null;
-    const visionModel = style.visionModel ?? null;
-    const visionTemperature = style.visionTemperature ?? null;
-    const falModel = style.falModel ?? null;
+    const visionModel = visionConfig.visionModel ?? null;
+    const visionTemperature = visionConfig.visionTemperature ?? null;
+    const falModel = imageGenConfig.model ?? null;
+    const falParameters = (imageGenConfig.parameters ?? {}) as Record<
+      string,
+      unknown
+    >;
 
     const mergedTemplateVars = {
       ...(templateVars ?? {}),
@@ -59,6 +78,8 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
 
     // Freeze a snapshot of the template config at execution time for audit/reproducibility
     const promptSnapshot = {
+      visionConfigId: visionConfig.id,
+      imageGenConfigId: imageGenConfig.id,
       promptTemplate,
       descriptionExample,
       templateVars: mergedTemplateVars,
@@ -69,6 +90,7 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
     };
 
     // Step 1 — Vision + prompt generation via OpenRouter VLM
+    // templateVars parece que no definido en la base de datos.
     const visionResult = await this.openRouterPrompt.buildPrompt({
       photoUrl: ctx.petPhotoUrl,
       promptTemplate: promptTemplate ?? '',
@@ -95,7 +117,7 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
       prompt,
       imageUrls: [ctx.petPhotoUrl],
       aspectRatio,
-      params: (style.parameters as Record<string, unknown>) ?? {},
+      params: falParameters,
     });
 
     // Step 3 — Upload to Cloudinary via StorageService

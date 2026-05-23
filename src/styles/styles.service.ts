@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -21,7 +25,7 @@ export class StylesService {
 
     const styles = await this.prisma.style.findMany({
       where,
-      orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
+      orderBy: [{ category: 'asc' }, { displayName: 'asc' }],
       include: {
         images: { orderBy: { orderIndex: 'asc' } },
       },
@@ -53,6 +57,8 @@ export class StylesService {
       where: { id },
       include: {
         images: { orderBy: { orderIndex: 'asc' } },
+        visionConfig: true,
+        imageGenConfig: true,
         _count: { select: { generations: true, productReferences: true } },
       },
     });
@@ -67,7 +73,7 @@ export class StylesService {
   async findByCategory(category: string) {
     const styles = await this.prisma.style.findMany({
       where: { category, isActive: true },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: { displayName: 'asc' },
       include: { images: { orderBy: { orderIndex: 'asc' } } },
     });
 
@@ -94,8 +100,12 @@ export class StylesService {
 
   async findAllForAdmin() {
     const styles = await this.prisma.style.findMany({
-      orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
-      include: { images: { orderBy: { orderIndex: 'asc' } } },
+      orderBy: [{ category: 'asc' }, { displayName: 'asc' }],
+      include: {
+        images: { orderBy: { orderIndex: 'asc' } },
+        visionConfig: true,
+        imageGenConfig: true,
+      },
     });
     return styles.map((s) => ({
       ...s,
@@ -104,12 +114,30 @@ export class StylesService {
   }
 
   async create(dto: CreateStyleDto) {
-    return this.prisma.style.create({ data: dto });
+    try {
+      return await this.prisma.style.create({ data: dto });
+    } catch (e: any) {
+      if (e?.code === 'P2003') {
+        throw new BadRequestException(
+          'Invalid visionConfigId or imageGenConfigId — referenced config does not exist',
+        );
+      }
+      throw e;
+    }
   }
 
   async update(id: string, dto: UpdateStyleDto) {
     await this.findOne(id);
-    return this.prisma.style.update({ where: { id }, data: dto });
+    try {
+      return await this.prisma.style.update({ where: { id }, data: dto });
+    } catch (e: any) {
+      if (e?.code === 'P2003') {
+        throw new BadRequestException(
+          'Invalid visionConfigId or imageGenConfigId — referenced config does not exist',
+        );
+      }
+      throw e;
+    }
   }
 
   async softDelete(id: string) {
@@ -123,7 +151,7 @@ export class StylesService {
   async addImage(
     styleId: string,
     file: Express.Multer.File,
-    caption?: string,
+    altImage?: string,
     orderIndex?: number,
   ) {
     await this.findOne(styleId);
@@ -140,7 +168,7 @@ export class StylesService {
         styleId,
         imageUrl,
         storageKey: key,
-        caption,
+        altImage,
         orderIndex: orderIndex ?? 0,
       },
     });
@@ -167,6 +195,7 @@ export class StylesService {
       data: {
         ...(dto.isPrimary !== undefined && { isPrimary: dto.isPrimary }),
         ...(dto.orderIndex !== undefined && { orderIndex: dto.orderIndex }),
+        ...(dto.altImage !== undefined && { altImage: dto.altImage }),
       },
     });
   }

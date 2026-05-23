@@ -113,7 +113,9 @@ export class AdminOrdersController {
   }
 
   @Patch(':id/items/:itemId/fulfillment')
-  @ApiOperation({ summary: 'Override fulfillment method of an order item (in_house | pod)' })
+  @ApiOperation({
+    summary: 'Override fulfillment method of an order item (in_house | pod)',
+  })
   updateFulfillmentMethod(
     @Param('id') orderId: string,
     @Param('itemId') itemId: string,

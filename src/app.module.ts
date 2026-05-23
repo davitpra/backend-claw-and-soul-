@@ -27,6 +27,8 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { ShopifySyncModule } from './shopify-sync/shopify-sync.module';
 import { AdminModule } from './admin/admin.module';
 import { OrdersModule } from './orders/orders.module';
+import { VisionConfigsModule } from './vision-configs/vision-configs.module';
+import { ImageGenConfigsModule } from './image-gen-configs/image-gen-configs.module';
 
 // Guards
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -73,6 +75,8 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     ShopifySyncModule,
     AdminModule,
     OrdersModule,
+    VisionConfigsModule,
+    ImageGenConfigsModule,
   ],
   providers: [
     {

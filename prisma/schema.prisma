@@ -267,7 +267,7 @@ model ProductFormatVariant {
 model Generation {
   id                    String    @id @default(uuid())
   userId                String    @map("user_id")
-  petId                 String    @map("pet_id")
+  petId                 String?   @map("pet_id")
   petPhotoId            String?   @map("pet_photo_id")
   styleId               String    @map("style_id")
   formatId              String?   @map("format_id")
@@ -289,12 +289,13 @@ model Generation {
   promptSnapshot        Json?     @map("prompt_snapshot")
   isPublic              Boolean   @default(false) @map("is_public")
   isFavorite            Boolean   @default(false) @map("is_favorite")
+  isAdminTest           Boolean   @default(false) @map("is_admin_test")
   createdAt             DateTime  @default(now()) @map("created_at")
   completedAt           DateTime? @map("completed_at")
   updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at")
 
   user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  pet        Pet               @relation(fields: [petId], references: [id], onDelete: Cascade)
+  pet        Pet?              @relation(fields: [petId], references: [id], onDelete: SetNull)
   petPhoto   PetPhoto?         @relation(fields: [petPhotoId], references: [id], onDelete: SetNull)
   style      Style             @relation(fields: [styleId], references: [id], onDelete: Restrict)
   format     Format?           @relation(fields: [formatId], references: [id], onDelete: SetNull)
@@ -309,6 +310,7 @@ model Generation {
   @@index([userId, status])
   @@index([userId, type])
   @@index([createdAt(sort: Desc)])
+  @@index([styleId, isAdminTest])
   @@map("generations")
 }
 

@@ -3,6 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -18,6 +20,7 @@ export class StylesService {
   constructor(
     private prisma: PrismaService,
     private storageService: StorageService,
+    @InjectQueue('image-generation') private imageQueue: Queue,
   ) {}
 
   async findAll(category?: string) {
@@ -228,5 +231,64 @@ export class StylesService {
     });
 
     return styles.map((s) => s.category);
+  }
+
+  async runAdminTestGeneration(
+    styleId: string,
+    adminUserId: string,
+    file: Express.Multer.File,
+    petContext: { petName: string; petSpecies: string; petBreed: string },
+    aspectRatio?: string,
+    userSelections?: Record<string, string | number>,
+  ) {
+    const style = await this.prisma.style.findUnique({
+      where: { id: styleId },
+      include: { visionConfig: true, imageGenConfig: true },
+    });
+    if (!style) throw new NotFoundException('Style not found');
+    if (!style.visionConfigId) {
+      throw new BadRequestException(
+        'El estilo no tiene visionConfig configurado',
+      );
+    }
+    if (!style.imageGenConfigId) {
+      throw new BadRequestException(
+        'El estilo no tiene imageGenConfig configurado',
+      );
+    }
+
+    const inputKey = `styles/${styleId}/test-inputs/${uuidv4()}`;
+    const inputPhotoUrl = await this.storageService.upload(
+      inputKey,
+      file.buffer,
+      file.mimetype,
+    );
+
+    const generation = await this.prisma.generation.create({
+      data: {
+        userId: adminUserId,
+        petId: null,
+        petPhotoId: null,
+        styleId,
+        type: 'image',
+        status: 'pending',
+        prompt: style.promptTemplate,
+        provider: 'fal',
+        isAdminTest: true,
+        metadata: {
+          petContext,
+          inputPhotoUrl,
+          inputStorageKey: inputKey,
+          ...(aspectRatio ? { compatConstraints: { aspectRatio } } : {}),
+          ...(userSelections && Object.keys(userSelections).length > 0
+            ? { userSelections }
+            : {}),
+        },
+      },
+    });
+
+    await this.imageQueue.add('generate', { generationId: generation.id });
+
+    return { generationId: generation.id, status: generation.status };
   }
 }

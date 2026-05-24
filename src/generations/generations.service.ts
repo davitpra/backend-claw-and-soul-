@@ -192,7 +192,7 @@ export class GenerationsService {
   async getGenerationStatus(id: string, userId: string) {
     const generation = await this.prisma.generation.findUnique({
       where: { id },
-      select: { status: true, userId: true, metadata: true },
+      select: { status: true, userId: true, metadata: true, errorMessage: true },
     });
 
     if (!generation) {
@@ -207,6 +207,7 @@ export class GenerationsService {
     return {
       status: generation.status,
       progress: (metadata?.progress ?? null) as number | null,
+      errorMessage: generation.errorMessage ?? null,
     };
   }
 

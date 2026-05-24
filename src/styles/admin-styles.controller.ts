@@ -30,6 +30,13 @@ import { UpdateStyleDto } from './dto/update-style.dto';
 import { UpdateStyleImageDto } from './dto/update-style-image.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+
+interface JwtUser {
+  sub: string;
+  email: string;
+  role: string;
+}
 
 @ApiTags('admin-styles')
 @ApiBearerAuth()
@@ -136,5 +143,70 @@ export class AdminStylesController {
     @Param('imgId') imgId: string,
   ) {
     return this.stylesService.removeImage(styleId, imgId);
+  }
+
+  @Post(':styleId/test-generation')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        petName: { type: 'string' },
+        petSpecies: { type: 'string' },
+        petBreed: { type: 'string' },
+        aspectRatio: { type: 'string', example: '1:1' },
+        userSelections: { type: 'string', description: 'JSON-encoded Record<string, string|number>' },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiOperation({ summary: 'Run a test AI generation for a style (admin)' })
+  @ApiResponse({ status: 201, description: 'Test generation enqueued' })
+  @ApiResponse({ status: 400, description: 'Missing file or configs' })
+  @ApiResponse({ status: 404, description: 'Style not found' })
+  runTestGeneration(
+    @Param('styleId') styleId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: JwtUser,
+    @Body('petName') petName?: string,
+    @Body('petSpecies') petSpecies?: string,
+    @Body('petBreed') petBreed?: string,
+    @Body('aspectRatio') aspectRatio?: string,
+    @Body('userSelections') userSelectionsJson?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('File must be an image');
+    }
+
+    let userSelections: Record<string, string | number> | undefined;
+    if (userSelectionsJson) {
+      try {
+        const parsed = JSON.parse(userSelectionsJson);
+        if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
+          throw new Error();
+        }
+        userSelections = parsed as Record<string, string | number>;
+      } catch {
+        throw new BadRequestException('userSelections must be a valid JSON object');
+      }
+    }
+
+    return this.stylesService.runAdminTestGeneration(
+      styleId,
+      user.sub,
+      file,
+      {
+        petName: petName ?? 'Test Pet',
+        petSpecies: petSpecies ?? 'dog',
+        petBreed: petBreed ?? '',
+      },
+      aspectRatio || undefined,
+      userSelections,
+    );
   }
 }

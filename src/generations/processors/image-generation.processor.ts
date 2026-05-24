@@ -6,20 +6,29 @@ import { GenerationsService } from '../generations.service';
 import { StrategyRegistry } from '../pipeline/strategy.registry';
 import { QUEUE_NAMES, JOB_NAMES } from '../constants/queues.constants';
 import { StyleWithConfigs } from '../pipeline/pipeline.types';
+import { PrismaService } from '../../prisma/prisma.service';
 
 interface GenerateJobData {
   generationId: string;
 }
 
+interface AdminTestMetadata {
+  petContext?: { petName?: string; petSpecies?: string; petBreed?: string };
+  inputPhotoUrl?: string;
+  inputStorageKey?: string;
+  isAdminTest?: boolean;
+  compatConstraints?: Record<string, any>;
+  userSelections?: Record<string, string | number>;
+}
+
 interface GenerationWithRelations {
   id: string;
+  styleId: string;
+  isAdminTest: boolean;
   prompt: string | null;
-  metadata: {
-    compatConstraints?: Record<string, any>;
-    userSelections?: Record<string, string | number>;
-  } | null;
+  metadata: AdminTestMetadata | null;
   style: StyleWithConfigs;
-  pet: Pet;
+  pet: Pet | null;
   petPhoto: PetPhoto | null;
   format: Format | null;
 }
@@ -31,6 +40,7 @@ export class ImageGenerationProcessor extends WorkerHost {
   constructor(
     private readonly generationsService: GenerationsService,
     private readonly strategyRegistry: StrategyRegistry,
+    private readonly prisma: PrismaService,
   ) {
     super();
   }
@@ -53,32 +63,65 @@ export class ImageGenerationProcessor extends WorkerHost {
     );
 
     try {
-      const petPhotoUrl = generation.petPhoto?.photoUrl ?? '';
+      const metadata = generation.metadata as AdminTestMetadata | null;
+
+      let petPhotoUrl = generation.petPhoto?.photoUrl ?? '';
+      if (!petPhotoUrl && metadata?.inputPhotoUrl) {
+        petPhotoUrl = metadata.inputPhotoUrl;
+      }
       if (!petPhotoUrl) {
         throw new Error('No pet photo URL available for generation');
       }
+
+      const petContext = generation.pet ?? {
+        name: metadata?.petContext?.petName ?? 'Test Pet',
+        species: metadata?.petContext?.petSpecies ?? 'dog',
+        breed: metadata?.petContext?.petBreed ?? null,
+      };
 
       const strategy = this.strategyRegistry.get(generation.style.strategyKey);
 
       const constraints: Record<string, any> = {
         maxPets: 1,
-        ...(generation.metadata?.compatConstraints ?? {}),
+        ...(metadata?.compatConstraints ?? {}),
       };
 
       const result = await strategy.execute({
         generationId,
         petPhotoUrl,
         style: generation.style,
-        pet: generation.pet,
+        pet: petContext as Pet,
         format: generation.format,
         constraints,
-        userSelections: generation.metadata?.userSelections,
+        userSelections: metadata?.userSelections,
       });
 
       await this.generationsService.markCompleted(generationId, result);
       this.logger.log(
         `Image generation completed: ${generationId} (${result.processingTimeSeconds}s)`,
       );
+
+      if (generation.isAdminTest) {
+        const lastImage = await this.prisma.styleImage.findFirst({
+          where: { styleId: generation.styleId },
+          orderBy: { orderIndex: 'desc' },
+          select: { orderIndex: true },
+        });
+        const nextOrderIndex = (lastImage?.orderIndex ?? -1) + 1;
+        await this.prisma.styleImage.create({
+          data: {
+            styleId: generation.styleId,
+            imageUrl: result.resultUrl,
+            storageKey: result.resultStorageKey,
+            altImage: `Test admin · ${new Date().toISOString().slice(0, 10)}`,
+            orderIndex: nextOrderIndex,
+            isPrimary: false,
+          },
+        });
+        this.logger.log(
+          `StyleImage created from admin test generation: ${generationId}`,
+        );
+      }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';

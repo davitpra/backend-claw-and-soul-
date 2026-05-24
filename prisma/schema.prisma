@@ -124,7 +124,6 @@ model ImageGenConfig {
   name        String  @unique
   description String? @db.Text
 
-  provider   String @default("fal")
   model      String? // e.g. "fal-ai/flux/dev"
   parameters Json?
 
@@ -153,11 +152,12 @@ model Style {
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
   // Pipeline config
-  strategyKey      String  @default("default") @map("strategy_key")
-  promptTemplate   String  @map("prompt_template") @db.Text
-  templateVars     Json?   @map("template_vars")
-  visionConfigId   String? @map("vision_config_id")
-  imageGenConfigId String? @map("image_gen_config_id")
+  strategyKey          String  @default("default") @map("strategy_key")
+  promptTemplate       String  @map("prompt_template") @db.Text
+  templateVars         Json?   @map("template_vars")
+  templateVarOptions   Json?   @map("template_var_options")
+  visionConfigId       String? @map("vision_config_id")
+  imageGenConfigId     String? @map("image_gen_config_id")
 
   visionConfig   VisionConfig?   @relation(fields: [visionConfigId], references: [id], onDelete: SetNull)
   imageGenConfig ImageGenConfig? @relation(fields: [imageGenConfigId], references: [id], onDelete: SetNull)

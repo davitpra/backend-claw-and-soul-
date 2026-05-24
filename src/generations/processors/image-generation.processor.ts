@@ -14,7 +14,10 @@ interface GenerateJobData {
 interface GenerationWithRelations {
   id: string;
   prompt: string | null;
-  metadata: { compatConstraints?: Record<string, any> } | null;
+  metadata: {
+    compatConstraints?: Record<string, any>;
+    userSelections?: Record<string, string | number>;
+  } | null;
   style: StyleWithConfigs;
   pet: Pet;
   petPhoto: PetPhoto | null;
@@ -69,6 +72,7 @@ export class ImageGenerationProcessor extends WorkerHost {
         pet: generation.pet,
         format: generation.format,
         constraints,
+        userSelections: generation.metadata?.userSelections,
       });
 
       await this.generationsService.markCompleted(generationId, result);

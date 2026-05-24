@@ -74,6 +74,7 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
 
     const mergedTemplateVars = {
       ...(templateVars ?? {}),
+      ...(ctx.userSelections ?? {}),
       maxPets: ctx.constraints.maxPets,
     };
 
@@ -83,6 +84,7 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
       imageGenConfigId: imageGenConfig.id,
       promptTemplate,
       templateVars: mergedTemplateVars,
+      userSelections: ctx.userSelections ?? null,
       visionModel,
       visionTemperature,
       visionSystemPrompt,

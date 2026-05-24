@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsIn,
   IsInt,
+  IsObject,
   Min,
   Max,
 } from 'class-validator';
@@ -55,4 +56,13 @@ export class CreateImageGenerationDto {
   @ApiProperty({ description: 'Product reference ID' })
   @IsUUID()
   productRefId!: string;
+
+  @ApiProperty({
+    description: 'User-selected values for templateVarOptions defined on the style',
+    example: { background: 'blue', colorCount: 7 },
+    required: false,
+  })
+  @IsOptional()
+  @IsObject()
+  userSelections?: Record<string, string | number>;
 }

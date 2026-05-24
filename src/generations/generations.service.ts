@@ -63,6 +63,17 @@ export class GenerationsService {
       );
     }
 
+    // Load style to validate userSelections against templateVarOptions
+    const style = await this.prisma.style.findUnique({
+      where: { id: product.styleId },
+      select: { templateVarOptions: true },
+    });
+
+    const validatedSelections = this.validateUserSelections(
+      createDto.userSelections ?? {},
+      (style?.templateVarOptions ?? null) as Record<string, any> | null,
+    );
+
     // Validate the requested format is available for this product
     const variant = await this.prisma.productFormatVariant.findFirst({
       where: {
@@ -95,6 +106,7 @@ export class GenerationsService {
           width: createDto.width || 1024,
           height: createDto.height || 1024,
           compatConstraints: variant.constraints ?? {},
+          userSelections: validatedSelections,
         },
       },
       include: {
@@ -278,6 +290,66 @@ export class GenerationsService {
         promptSnapshot: data.promptSnapshot ?? undefined,
       },
     });
+  }
+
+  private validateUserSelections(
+    userSelections: Record<string, string | number>,
+    templateVarOptions: Record<string, any> | null,
+  ): Record<string, string | number> {
+    if (!templateVarOptions || Object.keys(templateVarOptions).length === 0) {
+      return {};
+    }
+
+    const result: Record<string, string | number> = {};
+
+    for (const [key, optDef] of Object.entries(templateVarOptions)) {
+      const rawValue = userSelections[key];
+
+      if (rawValue === undefined || rawValue === null) {
+        if (optDef.required) {
+          throw new BadRequestException(
+            `userSelections.${key} is required but was not provided`,
+          );
+        }
+        if (optDef.default !== undefined) {
+          result[key] = optDef.default;
+        }
+        continue;
+      }
+
+      if (optDef.type === 'select') {
+        const allowed: string[] = (optDef.options ?? []).map((o: any) => o.value);
+        if (!allowed.includes(String(rawValue))) {
+          throw new BadRequestException(
+            `userSelections.${key} value "${rawValue}" is not in the allowed options: [${allowed.join(', ')}]`,
+          );
+        }
+        result[key] = String(rawValue);
+      } else if (optDef.type === 'slider') {
+        const num = Number(rawValue);
+        if (isNaN(num)) {
+          throw new BadRequestException(
+            `userSelections.${key} must be a number`,
+          );
+        }
+        if (num < optDef.min || num > optDef.max) {
+          throw new BadRequestException(
+            `userSelections.${key} value ${num} is outside allowed range [${optDef.min}, ${optDef.max}]`,
+          );
+        }
+        result[key] = num;
+      } else if (optDef.type === 'color') {
+        const hex = String(rawValue);
+        if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+          throw new BadRequestException(
+            `userSelections.${key} must be a valid hex color (e.g. #448da6)`,
+          );
+        }
+        result[key] = hex;
+      }
+    }
+
+    return result;
   }
 
   async markFailed(generationId: string, errorMessage: string) {

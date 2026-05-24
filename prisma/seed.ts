@@ -30,7 +30,6 @@ async function main() {
     create: {
       name: 'flux-dev-default',
       description: 'Default Fal.ai Flux Dev configuration',
-      provider: 'fal',
       model: 'fal-ai/flux/dev',
       parameters: { num_inference_steps: 28 },
     },

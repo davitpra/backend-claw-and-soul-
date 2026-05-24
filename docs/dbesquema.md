@@ -126,7 +126,6 @@ Table image_gen_configs {
 id varchar [pk]
 name varchar [not null, unique]
 description text
-provider varchar [not null, default: 'fal', note: 'Proveedor de generación de imagen: fal, etc.']
 model varchar [note: 'ID del modelo del proveedor, e.g. fal-ai/flux/dev']
 parameters json [note: 'Parámetros específicos del proveedor/modelo (steps, guidance_scale, etc.)']
 is_active boolean
@@ -137,7 +136,7 @@ indexes {
 is_active
 }
 
-Note: 'Configuración reutilizable para la etapa de generación de imagen: define proveedor, modelo y parámetros. Es referenciada por N styles.'
+Note: 'Configuración reutilizable para la etapa de generación de imagen: define modelo y parámetros. Es referenciada por N styles.'
 }
 
 // ============================================

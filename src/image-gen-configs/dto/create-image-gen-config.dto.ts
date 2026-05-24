@@ -18,11 +18,6 @@ export class CreateImageGenConfigDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ example: 'fal', required: false })
-  @IsOptional()
-  @IsString()
-  provider?: string;
-
   @ApiProperty({ example: 'fal-ai/flux/dev', required: false })
   @IsOptional()
   @IsString()

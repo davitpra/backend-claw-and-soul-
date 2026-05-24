@@ -23,6 +23,7 @@ export interface PipelineContext {
     aspectRatio?: string;
     [key: string]: unknown;
   };
+  userSelections?: Record<string, string | number>;
 }
 
 export interface PipelineResult {

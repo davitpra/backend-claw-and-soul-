@@ -135,7 +135,7 @@ export class StylesService {
   async update(id: string, dto: UpdateStyleDto) {
     await this.findOne(id);
     try {
-      return await this.prisma.style.update({ where: { id }, data: dto });
+      await this.prisma.style.update({ where: { id }, data: dto });
     } catch (e: any) {
       if (e?.code === 'P2003') {
         throw new BadRequestException(
@@ -144,6 +144,7 @@ export class StylesService {
       }
       throw e;
     }
+    return this.findOneForAdmin(id);
   }
 
   async softDelete(id: string) {

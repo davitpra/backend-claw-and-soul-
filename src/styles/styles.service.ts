@@ -247,6 +247,35 @@ export class StylesService {
     return this.prisma.styleImage.delete({ where: { id: imgId } });
   }
 
+  async uploadReferenceImage(styleId: string, file: Express.Multer.File) {
+    const style = await this.findOne(styleId);
+
+    if (style.styleReferenceStorageKey) {
+      await this.storageService.delete(style.styleReferenceStorageKey).catch(() => {});
+    }
+
+    const key = `styles/${styleId}/reference-${uuidv4()}`;
+    const url = await this.storageService.upload(key, file.buffer, file.mimetype);
+
+    return this.prisma.style.update({
+      where: { id: styleId },
+      data: { styleReferenceUrl: url, styleReferenceStorageKey: key },
+    });
+  }
+
+  async removeReferenceImage(styleId: string) {
+    const style = await this.findOne(styleId);
+
+    if (style.styleReferenceStorageKey) {
+      await this.storageService.delete(style.styleReferenceStorageKey).catch(() => {});
+    }
+
+    return this.prisma.style.update({
+      where: { id: styleId },
+      data: { styleReferenceUrl: null, styleReferenceStorageKey: null },
+    });
+  }
+
   async getCategories() {
     const styles = await this.prisma.style.findMany({
       where: { isActive: true },

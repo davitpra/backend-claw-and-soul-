@@ -157,6 +157,35 @@ export class AdminStylesController {
     return this.stylesService.removeImage(styleId, imgId);
   }
 
+  @Post(':styleId/reference-image')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @ApiOperation({ summary: 'Upload the style-transfer reference image' })
+  @ApiResponse({ status: 201, description: 'Reference image uploaded' })
+  uploadReferenceImage(
+    @Param('styleId') styleId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('No file provided');
+    if (!file.mimetype.startsWith('image/'))
+      throw new BadRequestException('File must be an image');
+    return this.stylesService.uploadReferenceImage(styleId, file);
+  }
+
+  @Delete(':styleId/reference-image')
+  @ApiOperation({ summary: 'Remove the style-transfer reference image' })
+  @ApiResponse({ status: 200, description: 'Reference image removed' })
+  removeReferenceImage(@Param('styleId') styleId: string) {
+    return this.stylesService.removeReferenceImage(styleId);
+  }
+
   @Get(':styleId/images/:imageId/generation')
   @ApiOperation({
     summary: 'Get the generation that produced a style image (admin)',

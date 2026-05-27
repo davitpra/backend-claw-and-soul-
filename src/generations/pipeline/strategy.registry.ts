@@ -1,14 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BaseStyleStrategy } from './pipeline.types';
 import { DefaultStyleStrategy } from './strategies/default.strategy';
+import { StyleTransferRolesStrategy } from './strategies/style-transfer-roles.strategy';
 
 @Injectable()
 export class StrategyRegistry {
   private readonly logger = new Logger(StrategyRegistry.name);
   private readonly map = new Map<string, BaseStyleStrategy>();
 
-  constructor(private defaultStrategy: DefaultStyleStrategy) {
+  constructor(
+    private defaultStrategy: DefaultStyleStrategy,
+    private styleTransferRolesStrategy: StyleTransferRolesStrategy,
+  ) {
     this.register(defaultStrategy);
+    this.register(styleTransferRolesStrategy);
   }
 
   register(strategy: BaseStyleStrategy): void {
@@ -23,5 +28,9 @@ export class StrategyRegistry {
       return this.map.get('default')!;
     }
     return strategy;
+  }
+
+  listKeys(): string[] {
+    return Array.from(this.map.keys());
   }
 }

@@ -87,6 +87,14 @@ export class CreateStyleDto {
   @IsString()
   imageGenConfigId?: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'Reference image URL for style-transfer strategies',
+  })
+  @IsOptional()
+  @IsString()
+  styleReferenceUrl?: string;
+
   @ApiProperty({ example: true, required: false })
   @IsOptional()
   @IsBoolean()

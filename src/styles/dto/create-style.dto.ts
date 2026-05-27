@@ -52,8 +52,17 @@ export class CreateStyleDto {
   templateVars?: Record<string, any>;
 
   @ApiProperty({
-    example: { background: { type: 'select', label: 'Fondo', options: [{ value: 'white', label: 'Blanco' }], default: 'white', required: true } },
-    description: 'User-selectable variables. Each key maps to a control definition (select, slider, or color).',
+    example: {
+      background: {
+        type: 'select',
+        label: 'Fondo',
+        options: [{ value: 'white', label: 'Blanco' }],
+        default: 'white',
+        required: true,
+      },
+    },
+    description:
+      'User-selectable variables. Each key maps to a control definition (select, slider, or color).',
     required: false,
   })
   @IsOptional()

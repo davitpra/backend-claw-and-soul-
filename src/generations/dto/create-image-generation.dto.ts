@@ -58,7 +58,8 @@ export class CreateImageGenerationDto {
   productRefId!: string;
 
   @ApiProperty({
-    description: 'User-selected values for templateVarOptions defined on the style',
+    description:
+      'User-selected values for templateVarOptions defined on the style',
     example: { background: 'blue', colorCount: 7 },
     required: false,
   })

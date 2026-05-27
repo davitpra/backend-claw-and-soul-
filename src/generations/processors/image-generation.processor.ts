@@ -63,7 +63,7 @@ export class ImageGenerationProcessor extends WorkerHost {
     );
 
     try {
-      const metadata = generation.metadata as AdminTestMetadata | null;
+      const metadata = generation.metadata;
 
       let petPhotoUrl = generation.petPhoto?.photoUrl ?? '';
       if (!petPhotoUrl && metadata?.inputPhotoUrl) {

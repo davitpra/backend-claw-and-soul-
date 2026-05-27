@@ -86,6 +86,18 @@ export class AdminStylesController {
     return this.stylesService.softDelete(styleId);
   }
 
+  @Delete(':styleId/permanent')
+  @ApiOperation({ summary: 'Hard delete a style (irreversible)' })
+  @ApiResponse({ status: 200, description: 'Style permanently deleted' })
+  @ApiResponse({
+    status: 400,
+    description: 'Style has generations and cannot be deleted',
+  })
+  @ApiResponse({ status: 404, description: 'Style not found' })
+  hardDelete(@Param('styleId') styleId: string) {
+    return this.stylesService.hardDelete(styleId);
+  }
+
   @Post(':styleId/images')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
@@ -145,6 +157,19 @@ export class AdminStylesController {
     return this.stylesService.removeImage(styleId, imgId);
   }
 
+  @Get(':styleId/images/:imageId/generation')
+  @ApiOperation({
+    summary: 'Get the generation that produced a style image (admin)',
+  })
+  @ApiResponse({ status: 200, description: 'Generation data or null' })
+  @ApiResponse({ status: 404, description: 'Style image not found' })
+  getImageGeneration(
+    @Param('styleId') styleId: string,
+    @Param('imageId') imageId: string,
+  ) {
+    return this.stylesService.getImageGeneration(styleId, imageId);
+  }
+
   @Post(':styleId/test-generation')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
@@ -153,16 +178,26 @@ export class AdminStylesController {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary' },
+        petPhotoId: {
+          type: 'string',
+          description:
+            'ID of an existing PetPhoto to reuse (alternative to file)',
+        },
         petName: { type: 'string' },
         petSpecies: { type: 'string' },
         petBreed: { type: 'string' },
         aspectRatio: { type: 'string', example: '1:1' },
-        userSelections: { type: 'string', description: 'JSON-encoded Record<string, string|number>' },
+        userSelections: {
+          type: 'string',
+          description: 'JSON-encoded Record<string, string|number>',
+        },
       },
-      required: ['file'],
     },
   })
-  @ApiOperation({ summary: 'Run a test AI generation for a style (admin)' })
+  @ApiOperation({
+    summary:
+      'Run a test AI generation for a style (admin). Provide either file or petPhotoId.',
+  })
   @ApiResponse({ status: 201, description: 'Test generation enqueued' })
   @ApiResponse({ status: 400, description: 'Missing file or configs' })
   @ApiResponse({ status: 404, description: 'Style not found' })
@@ -170,16 +205,17 @@ export class AdminStylesController {
     @Param('styleId') styleId: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: JwtUser,
+    @Body('petPhotoId') petPhotoId?: string,
     @Body('petName') petName?: string,
     @Body('petSpecies') petSpecies?: string,
     @Body('petBreed') petBreed?: string,
     @Body('aspectRatio') aspectRatio?: string,
     @Body('userSelections') userSelectionsJson?: string,
   ) {
-    if (!file) {
-      throw new BadRequestException('No file provided');
+    if (!file && !petPhotoId) {
+      throw new BadRequestException('Provide either a file or a petPhotoId');
     }
-    if (!file.mimetype.startsWith('image/')) {
+    if (file && !file.mimetype.startsWith('image/')) {
       throw new BadRequestException('File must be an image');
     }
 
@@ -187,23 +223,29 @@ export class AdminStylesController {
     if (userSelectionsJson) {
       try {
         const parsed = JSON.parse(userSelectionsJson);
-        if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
+        if (
+          typeof parsed !== 'object' ||
+          Array.isArray(parsed) ||
+          parsed === null
+        ) {
           throw new Error();
         }
         userSelections = parsed as Record<string, string | number>;
       } catch {
-        throw new BadRequestException('userSelections must be a valid JSON object');
+        throw new BadRequestException(
+          'userSelections must be a valid JSON object',
+        );
       }
     }
 
     return this.stylesService.runAdminTestGeneration(
       styleId,
       user.sub,
-      file,
+      { file: file || undefined, petPhotoId: petPhotoId || undefined },
       {
-        petName: petName ?? 'Test Pet',
-        petSpecies: petSpecies ?? 'dog',
-        petBreed: petBreed ?? '',
+        petName: petName || undefined,
+        petSpecies: petSpecies || undefined,
+        petBreed: petBreed || undefined,
       },
       aspectRatio || undefined,
       userSelections,

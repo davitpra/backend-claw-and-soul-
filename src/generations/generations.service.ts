@@ -192,7 +192,12 @@ export class GenerationsService {
   async getGenerationStatus(id: string, userId: string) {
     const generation = await this.prisma.generation.findUnique({
       where: { id },
-      select: { status: true, userId: true, metadata: true, errorMessage: true },
+      select: {
+        status: true,
+        userId: true,
+        metadata: true,
+        errorMessage: true,
+      },
     });
 
     if (!generation) {
@@ -319,7 +324,9 @@ export class GenerationsService {
       }
 
       if (optDef.type === 'select') {
-        const allowed: string[] = (optDef.options ?? []).map((o: any) => o.value);
+        const allowed: string[] = (optDef.options ?? []).map(
+          (o: any) => o.value,
+        );
         if (!allowed.includes(String(rawValue))) {
           throw new BadRequestException(
             `userSelections.${key} value "${rawValue}" is not in the allowed options: [${allowed.join(', ')}]`,

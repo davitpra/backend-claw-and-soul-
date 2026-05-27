@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -158,6 +159,29 @@ export class StylesService {
     });
   }
 
+  async hardDelete(id: string) {
+    const style = await this.prisma.style.findUnique({
+      where: { id },
+      include: {
+        images: true,
+        _count: { select: { generations: true } },
+      },
+    });
+    if (!style) throw new NotFoundException('Style not found');
+
+    if (style._count.generations > 0) {
+      throw new BadRequestException(
+        `No se puede eliminar permanentemente: el estilo tiene ${style._count.generations} generación(es) asociada(s). Desactívalo en su lugar.`,
+      );
+    }
+
+    for (const img of style.images) {
+      await this.storageService.delete(img.storageKey).catch(() => null);
+    }
+
+    return this.prisma.style.delete({ where: { id } });
+  }
+
   async addImage(
     styleId: string,
     file: Express.Multer.File,
@@ -236,8 +260,12 @@ export class StylesService {
   async runAdminTestGeneration(
     styleId: string,
     adminUserId: string,
-    file: Express.Multer.File,
-    petContext: { petName: string; petSpecies: string; petBreed: string },
+    input: { file?: Express.Multer.File; petPhotoId?: string },
+    petContextOverride: {
+      petName?: string;
+      petSpecies?: string;
+      petBreed?: string;
+    },
     aspectRatio?: string,
     userSelections?: Record<string, string | number>,
   ) {
@@ -257,18 +285,53 @@ export class StylesService {
       );
     }
 
-    const inputKey = `styles/${styleId}/test-inputs/${uuidv4()}`;
-    const inputPhotoUrl = await this.storageService.upload(
-      inputKey,
-      file.buffer,
-      file.mimetype,
-    );
+    let inputPhotoUrl: string;
+    let inputStorageKey: string;
+    let resolvedPetId: string | null = null;
+    let resolvedPetPhotoId: string | null = null;
+    let petContext: { petName: string; petSpecies: string; petBreed: string };
+
+    if (input.petPhotoId) {
+      const petPhoto = await this.prisma.petPhoto.findUnique({
+        where: { id: input.petPhotoId },
+        include: { pet: true },
+      });
+      if (!petPhoto) throw new NotFoundException('PetPhoto not found');
+      if (petPhoto.pet.userId !== adminUserId) {
+        throw new ForbiddenException('You do not own this pet photo');
+      }
+
+      inputPhotoUrl = petPhoto.photoUrl;
+      inputStorageKey = petPhoto.photoStorageKey;
+      resolvedPetId = petPhoto.petId;
+      resolvedPetPhotoId = petPhoto.id;
+      petContext = {
+        petName: petContextOverride.petName ?? petPhoto.pet.name,
+        petSpecies: petContextOverride.petSpecies ?? petPhoto.pet.species,
+        petBreed: petContextOverride.petBreed ?? petPhoto.pet.breed ?? '',
+      };
+    } else if (input.file) {
+      const inputKey = `styles/${styleId}/test-inputs/${uuidv4()}`;
+      inputPhotoUrl = await this.storageService.upload(
+        inputKey,
+        input.file.buffer,
+        input.file.mimetype,
+      );
+      inputStorageKey = inputKey;
+      petContext = {
+        petName: petContextOverride.petName ?? 'Test Pet',
+        petSpecies: petContextOverride.petSpecies ?? 'dog',
+        petBreed: petContextOverride.petBreed ?? '',
+      };
+    } else {
+      throw new BadRequestException('Provide either a file or a petPhotoId');
+    }
 
     const generation = await this.prisma.generation.create({
       data: {
         userId: adminUserId,
-        petId: null,
-        petPhotoId: null,
+        petId: resolvedPetId,
+        petPhotoId: resolvedPetPhotoId,
         styleId,
         type: 'image',
         status: 'pending',
@@ -278,7 +341,7 @@ export class StylesService {
         metadata: {
           petContext,
           inputPhotoUrl,
-          inputStorageKey: inputKey,
+          inputStorageKey,
           ...(aspectRatio ? { compatConstraints: { aspectRatio } } : {}),
           ...(userSelections && Object.keys(userSelections).length > 0
             ? { userSelections }
@@ -290,5 +353,37 @@ export class StylesService {
     await this.imageQueue.add('generate', { generationId: generation.id });
 
     return { generationId: generation.id, status: generation.status };
+  }
+
+  async getImageGeneration(styleId: string, imageId: string) {
+    const image = await this.prisma.styleImage.findUnique({
+      where: { id: imageId },
+    });
+    if (!image || image.styleId !== styleId) {
+      throw new NotFoundException('Style image not found');
+    }
+
+    const generation = await this.prisma.generation.findFirst({
+      where: {
+        styleId,
+        isAdminTest: true,
+        resultStorageKey: image.storageKey,
+      },
+      select: {
+        id: true,
+        prompt: true,
+        finalPrompt: true,
+        metadata: true,
+        visionAnalysis: true,
+        provider: true,
+        falRequestId: true,
+        processingTimeSeconds: true,
+        status: true,
+        createdAt: true,
+        completedAt: true,
+      },
+    });
+
+    return { generation };
   }
 }

@@ -92,7 +92,9 @@ export class ColorTemplateVarOptionDto {
 
   @ApiProperty({ example: '#448da6' })
   @IsString()
-  @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'default must be a valid hex color (e.g. #448da6)' })
+  @Matches(/^#[0-9a-fA-F]{6}$/, {
+    message: 'default must be a valid hex color (e.g. #448da6)',
+  })
   default: string;
 
   @ApiProperty({ example: false, required: false })

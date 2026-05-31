@@ -249,6 +249,8 @@ model ProductFormatVariant {
   shopifyVariantId    String   @map("shopify_variant_id")
   shopifyVariantTitle String   @map("shopify_variant_title")
   constraints         Json?
+  podConfig           Json?    @map("pod_config")
+  podProvider         String?  @map("pod_provider") // e.g. "pictorem" — selects the provider for this variant
   isActive            Boolean  @default(true) @map("is_active")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
@@ -396,6 +398,8 @@ model OrderItem {
   unitPrice              Decimal   @map("unit_price") @db.Decimal(10, 2)
   totalPrice             Decimal   @map("total_price") @db.Decimal(10, 2)
   imageUrl               String?   @map("image_url")
+  printImageUrl          String?   @map("print_image_url")
+  printImageStorageKey   String?   @map("print_image_storage_key")
   style                  String?
   size                   String?
   fulfillmentMethod      String    @default("in_house") @map("fulfillment_method") // in_house | pod
@@ -444,6 +448,19 @@ model OrderEvent {
   @@index([orderId, createdAt(sort: Desc)])
   @@index([orderItemId])
   @@map("order_events")
+}
+
+// ============================================
+// APP SETTINGS (runtime key-value flags)
+// ============================================
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by")
+
+  @@map("app_settings")
 }
 
 // ============================================

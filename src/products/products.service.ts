@@ -221,11 +221,17 @@ export class ProductsService {
         formatId: dto.formatId,
         shopifyVariantId: dto.shopifyVariantId,
         shopifyVariantTitle: dto.shopifyVariantTitle,
+        podConfig: dto.podConfig
+          ? (dto.podConfig as unknown as Prisma.InputJsonValue)
+          : undefined,
         isActive: true,
       },
       update: {
         formatId: dto.formatId,
         shopifyVariantTitle: dto.shopifyVariantTitle,
+        podConfig: dto.podConfig
+          ? (dto.podConfig as unknown as Prisma.InputJsonValue)
+          : undefined,
         isActive: true,
       },
       include: { format: { select: { id: true, displayName: true } } },
@@ -262,9 +268,17 @@ export class ProductsService {
       if (!format) throw new NotFoundException('Format not found');
     }
 
-    const data: { formatId?: string; isActive?: boolean } = {};
+    const data: {
+      formatId?: string;
+      isActive?: boolean;
+      podProvider?: string | null;
+      podConfig?: Prisma.InputJsonValue;
+    } = {};
     if (dto.formatId !== undefined) data.formatId = dto.formatId;
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    if (dto.podProvider !== undefined) data.podProvider = dto.podProvider;
+    if (dto.podConfig !== undefined)
+      data.podConfig = dto.podConfig as unknown as Prisma.InputJsonValue;
 
     if (Object.keys(data).length === 0) {
       return this.prisma.productFormatVariant.findUnique({

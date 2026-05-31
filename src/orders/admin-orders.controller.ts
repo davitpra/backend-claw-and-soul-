@@ -10,13 +10,21 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   NotFoundException,
+  HttpCode,
+  HttpStatus,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiBearerAuth,
   ApiOperation,
   ApiQuery,
   ApiResponse,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -25,6 +33,14 @@ import { AdminOrdersService } from './admin-orders.service';
 import { OrdersService } from './orders.service';
 import { OrdersSyncService } from './orders-sync.service';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
+import { PodService } from './pod/pod.service';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import {
+  ORDERS_QUEUE,
+  ORDERS_JOB_NAMES,
+  ORDERS_JOB_OPTIONS,
+} from './constants/queues.constants';
 
 @ApiTags('admin-orders')
 @ApiBearerAuth()
@@ -37,6 +53,8 @@ export class AdminOrdersController {
     private readonly ordersService: OrdersService,
     private readonly ordersSyncService: OrdersSyncService,
     private readonly shopifyApiService: ShopifyApiService,
+    private readonly podService: PodService,
+    @InjectQueue(ORDERS_QUEUE) private readonly ordersQueue: Queue,
   ) {}
 
   @Get()
@@ -83,6 +101,37 @@ export class AdminOrdersController {
   @ApiOperation({ summary: 'Trigger order backfill from Shopify' })
   triggerSync(@Body('since') since?: string) {
     return this.ordersSyncService.triggerBackfill(since);
+  }
+
+  @Get('pod/health')
+  @ApiOperation({
+    summary: 'Test connectivity for all registered POD providers',
+  })
+  async podHealth() {
+    return this.podService.testConnection();
+  }
+
+  @Get('pod/providers')
+  @ApiOperation({ summary: 'List available POD provider names' })
+  podProviders() {
+    return { providers: this.podService.listProviders() };
+  }
+
+  @Get('pod/settings')
+  @ApiOperation({ summary: 'Get current POD auto-fulfillment enabled state' })
+  podSettingsGet() {
+    return this.podService.getPodEnabled();
+  }
+
+  @Patch('pod/settings')
+  @ApiOperation({
+    summary: 'Enable or disable POD auto-fulfillment at runtime',
+  })
+  podSettingsPatch(
+    @Body('enabled') enabled: boolean,
+    @CurrentUser() user?: { id: string },
+  ) {
+    return this.podService.setPodEnabled(enabled, user?.id);
   }
 
   @Get(':id')
@@ -185,6 +234,66 @@ export class AdminOrdersController {
       orderId,
       itemId,
       generationId,
+    );
+  }
+
+  @Post(':id/items/:itemId/pod/submit')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary:
+      'Enqueue POD submission (or re-submit) for an order item to Pictorem',
+  })
+  async podSubmit(
+    @Param('itemId') itemId: string,
+    @Body('force') force?: boolean,
+  ) {
+    await this.ordersQueue.add(
+      ORDERS_JOB_NAMES.POD_SUBMIT,
+      { orderItemId: itemId, force: force ?? false },
+      ORDERS_JOB_OPTIONS,
+    );
+    return { ok: true, queued: true, orderItemId: itemId };
+  }
+
+  @Post(':id/items/:itemId/pod/sync')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Immediately sync POD status + tracking for an order item from Pictorem',
+  })
+  async podSync(@Param('itemId') itemId: string) {
+    await this.podService.syncItem(itemId);
+    return { ok: true, orderItemId: itemId };
+  }
+
+  @Post(':id/items/:itemId/print-image')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @ApiOperation({
+    summary: 'Upload a print/POD override image for an order item',
+  })
+  @ApiResponse({ status: 201, description: 'Print image uploaded' })
+  uploadPrintImage(
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user?: { id: string },
+  ) {
+    if (!file) throw new BadRequestException('No file provided');
+    if (!file.mimetype.startsWith('image/'))
+      throw new BadRequestException('File must be an image');
+    return this.ordersService.updateItemPrintImage(
+      orderId,
+      itemId,
+      file,
+      user?.id,
     );
   }
 }

@@ -124,6 +124,8 @@ export class AdminProductsController {
           shopifyVariantId: v.shopifyVariantId,
           shopifyVariantTitle: v.shopifyVariantTitle,
           isActive: v.isActive,
+          podProvider: v.podProvider ?? null,
+          podConfig: v.podConfig ?? null,
         })),
         unlinkedVariants: [],
       };
@@ -155,6 +157,8 @@ export class AdminProductsController {
           shopifyVariantId,
           shopifyVariantTitle: variant.title,
           isActive: dbVariant.isActive,
+          podConfig: dbVariant.podConfig ?? null,
+          podProvider: dbVariant.podProvider ?? null,
         });
         continue;
       }

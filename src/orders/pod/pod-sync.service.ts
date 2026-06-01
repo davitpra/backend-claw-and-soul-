@@ -27,7 +27,9 @@ export class PodSyncService {
       where: {
         fulfillmentMethod: 'pod',
         podOrderId: { not: null },
-        productionStatus: 'in_production',
+        // Include 'pending' so a Pictorem "pending payment" cancellation
+        // (status code 9 → pending, or 5 → cancelled) reflects automatically.
+        productionStatus: { in: ['in_production', 'pending'] },
       },
       select: { id: true },
     });

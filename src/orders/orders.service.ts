@@ -9,6 +9,8 @@ import { Queue } from 'bullmq';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
+import { PodProviderRegistry } from './pod/pod-provider.registry';
 import { ShopifyOrderPayload } from './dto/shopify-order.dto';
 import { Prisma } from '@prisma/client';
 import {
@@ -18,6 +20,7 @@ import {
 } from './constants/queues.constants';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
+  pending: ['in_production', 'cancelled', 'refunded'],
   paid: ['in_production', 'cancelled', 'refunded'],
   in_production: ['shipped', 'cancelled', 'refunded'],
   shipped: ['delivered', 'refunded'],
@@ -26,6 +29,13 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   refunded: [],
 };
 
+/** Production states from which an item can still be cancelled (not yet shipped). */
+const CANCELLABLE_STATUSES = ['pending', 'paid', 'in_production'];
+/** Terminal/non-active states — an order is fully cancelled when none remain outside these. */
+const INACTIVE_STATUSES = ['cancelled', 'refunded'];
+
+const DEFAULT_POD_PROVIDER = 'pictorem';
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -33,6 +43,8 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
+    private readonly shopifyApiService: ShopifyApiService,
+    private readonly podRegistry: PodProviderRegistry,
     @InjectQueue(ORDERS_QUEUE) private readonly ordersQueue: Queue,
   ) {}
 
@@ -344,6 +356,155 @@ export class OrdersService {
         payload: notes ? ({ notes } as Prisma.InputJsonValue) : Prisma.JsonNull,
       },
     });
+  }
+
+  /**
+   * Cancel one or more items of an order, reflecting the change in Shopify
+   * (strict) and Pictorem (best-effort).
+   *
+   * - Only items in a cancellable state (pending|paid|in_production) are eligible.
+   * - Shopify is called FIRST: if it fails, the whole operation aborts and the
+   *   DB is left untouched (strict mode). When the cancellation empties the
+   *   order it cancels the whole Shopify order; otherwise it refunds the
+   *   affected line items.
+   * - Pictorem cancellation is best-effort: Pictorem ArtFlow 0.1 has no
+   *   cancellation endpoint, so failures are collected as warnings instead of
+   *   aborting.
+   */
+  async cancelOrderItems(
+    orderId: string,
+    opts: {
+      itemIds?: string[];
+      reason?: string;
+      refund?: boolean;
+      restock?: boolean;
+      adminUserId?: string;
+    },
+  ): Promise<{
+    cancelledItemIds: string[];
+    shopifyAction: 'order_cancel' | 'partial_refund';
+    warnings: string[];
+  }> {
+    const refund = opts.refund ?? true;
+    const restock = opts.restock ?? true;
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+
+    // Resolve target items: explicit itemIds (validated), or all cancellable items.
+    const targets: typeof order.items = [];
+    if (opts.itemIds && opts.itemIds.length > 0) {
+      const byId = new Map(order.items.map((i) => [i.id, i]));
+      for (const id of opts.itemIds) {
+        const item = byId.get(id);
+        if (!item)
+          throw new NotFoundException(`Order item ${id} not found in order`);
+        if (!CANCELLABLE_STATUSES.includes(item.productionStatus)) {
+          throw new BadRequestException(
+            `Item ${id} is in "${item.productionStatus}" and cannot be cancelled`,
+          );
+        }
+        targets.push(item);
+      }
+    } else {
+      targets.push(
+        ...order.items.filter((i) =>
+          CANCELLABLE_STATUSES.includes(i.productionStatus),
+        ),
+      );
+    }
+
+    if (targets.length === 0) {
+      throw new BadRequestException('No cancellable items in this order');
+    }
+
+    const targetIds = new Set(targets.map((i) => i.id));
+
+    // Whole-order cancel when no active item remains outside the target set.
+    const remainingActive = order.items.filter(
+      (i) =>
+        !targetIds.has(i.id) && !INACTIVE_STATUSES.includes(i.productionStatus),
+    );
+    const cancelsWholeOrder = remainingActive.length === 0;
+    const shopifyAction: 'order_cancel' | 'partial_refund' = cancelsWholeOrder
+      ? 'order_cancel'
+      : 'partial_refund';
+
+    // 1) Shopify FIRST — strict: any failure aborts before touching the DB.
+    if (cancelsWholeOrder) {
+      await this.shopifyApiService.cancelOrder(order.shopifyOrderId, {
+        reason: 'other',
+        refund,
+        restock,
+      });
+    } else {
+      await this.shopifyApiService.refundLineItems(
+        order.shopifyOrderId,
+        targets.map((i) => ({
+          shopifyLineItemId: i.shopifyLineItemId,
+          quantity: i.quantity,
+        })),
+        { restock },
+      );
+    }
+
+    // 2) Pictorem — best-effort: collect warnings, never abort.
+    const warnings: string[] = [];
+    for (const item of targets) {
+      if (item.fulfillmentMethod === 'pod' && item.podOrderId) {
+        const providerName = item.podProvider ?? DEFAULT_POD_PROVIDER;
+        try {
+          await this.podRegistry.get(providerName).cancel(item.podOrderId);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          warnings.push(
+            `"${item.title}" ya fue enviado a ${providerName} (#${item.podOrderId}): elimina el presupuesto (remove quote) en el panel de Pictorem. El siguiente sync lo detectará y marcará el item como cancelado. (${message})`,
+          );
+        }
+      }
+    }
+
+    // 3) DB — atomic: mark items cancelled, set cancelledAt if whole order, audit.
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.orderItem.updateMany({
+        where: { id: { in: [...targetIds] } },
+        data: { productionStatus: 'cancelled' },
+      }),
+      ...(cancelsWholeOrder
+        ? [
+            this.prisma.order.update({
+              where: { id: orderId },
+              data: { cancelledAt: now },
+            }),
+          ]
+        : []),
+      this.prisma.orderEvent.create({
+        data: {
+          orderId,
+          eventType: 'order_cancelled',
+          source: 'admin',
+          userId: opts.adminUserId ?? null,
+          payload: {
+            reason: opts.reason ?? null,
+            refund,
+            restock,
+            shopifyAction,
+            itemIds: [...targetIds],
+            podManualWarnings: warnings,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      }),
+    ]);
+
+    this.logger.log(
+      `Order ${order.orderNumber} cancel: items=${targetIds.size} action=${shopifyAction} warnings=${warnings.length}`,
+    );
+
+    return { cancelledItemIds: [...targetIds], shopifyAction, warnings };
   }
 
   async updateItemTracking(

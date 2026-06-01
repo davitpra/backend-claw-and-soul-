@@ -223,6 +223,28 @@ export class AdminOrdersController {
     return { ok: true };
   }
 
+  @Post(':id/cancel')
+  @ApiOperation({
+    summary:
+      'Cancel order items (reflects in Shopify strictly, Pictorem best-effort)',
+  })
+  cancel(
+    @Param('id') orderId: string,
+    @Body('itemIds') itemIds?: string[],
+    @Body('reason') reason?: string,
+    @Body('refund') refund?: boolean,
+    @Body('restock') restock?: boolean,
+    @CurrentUser() user?: { id: string },
+  ) {
+    return this.ordersService.cancelOrderItems(orderId, {
+      itemIds,
+      reason,
+      refund,
+      restock,
+      adminUserId: user?.id,
+    });
+  }
+
   @Post(':id/link-user')
   @ApiOperation({ summary: 'Manually link an order to a user' })
   linkUser(@Param('id') orderId: string, @Body('userId') userId: string) {

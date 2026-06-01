@@ -104,6 +104,110 @@ export class ShopifyApiService {
     }
   }
 
+  /**
+   * Cancel an entire order in Shopify.
+   * Requires the Admin token to have the `write_orders` scope.
+   * @throws when Shopify responds non-2xx (caller decides strict vs best-effort).
+   */
+  async cancelOrder(
+    shopifyOrderId: string,
+    opts: {
+      reason?: string;
+      refund?: boolean;
+      restock?: boolean;
+      email?: boolean;
+    } = {},
+  ): Promise<unknown> {
+    const body: Record<string, unknown> = {
+      reason: opts.reason ?? 'other',
+      refund: opts.refund ?? true,
+      restock: opts.restock ?? true,
+      email: opts.email ?? true,
+    };
+
+    const response = await this.postJson(
+      `${this.baseUrl}/orders/${shopifyOrderId}/cancel.json`,
+      body,
+    );
+    return response.json();
+  }
+
+  /**
+   * Issue a partial refund for specific line items of an order (used when only
+   * some items of a multi-item order are cancelled). Runs the two-step Shopify
+   * flow: refunds/calculate.json → refunds.json.
+   * Requires the Admin token to have the `write_orders` scope.
+   * @throws when Shopify responds non-2xx.
+   */
+  async refundLineItems(
+    shopifyOrderId: string,
+    lineItems: Array<{ shopifyLineItemId: string; quantity: number }>,
+    opts: { restock?: boolean; notify?: boolean } = {},
+  ): Promise<unknown> {
+    const restockType = opts.restock ? 'cancel' : 'no_restock';
+    const refundLineItems = lineItems.map((li) => ({
+      line_item_id: Number(li.shopifyLineItemId),
+      quantity: li.quantity,
+      restock_type: restockType,
+    }));
+
+    // Step 1: ask Shopify to calculate the refund (shipping, taxes, transactions).
+    const calcResponse = await this.postJson(
+      `${this.baseUrl}/orders/${shopifyOrderId}/refunds/calculate.json`,
+      {
+        refund: {
+          shipping: { full_refund: false },
+          refund_line_items: refundLineItems,
+        },
+      },
+    );
+    const calc = (await calcResponse.json()) as {
+      refund: { transactions?: Array<Record<string, unknown>> };
+    };
+
+    // Step 2: create the refund, replaying the calculated transactions as
+    // pending refunds against their parent transactions.
+    const transactions = (calc.refund.transactions ?? []).map((t) => ({
+      parent_id: t.parent_id,
+      amount: t.amount,
+      kind: 'refund',
+      gateway: t.gateway,
+    }));
+
+    const createResponse = await this.postJson(
+      `${this.baseUrl}/orders/${shopifyOrderId}/refunds.json`,
+      {
+        refund: {
+          notify: opts.notify ?? true,
+          refund_line_items: refundLineItems,
+          transactions,
+        },
+      },
+    );
+    return createResponse.json();
+  }
+
+  /** POST helper for Admin write calls. Throws with the Shopify body on failure. */
+  private async postJson(url: string, body: unknown): Promise<Response> {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': this.token,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(
+        `Shopify write error ${response.status} at ${url}: ${detail}`,
+      );
+    }
+
+    return response;
+  }
+
   async registerWebhooks(appPublicUrl: string): Promise<void> {
     for (const topic of WEBHOOK_TOPICS) {
       const [resource, event] = topic.split('/');

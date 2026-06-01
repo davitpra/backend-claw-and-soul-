@@ -224,6 +224,15 @@ export class PictoremProvider implements PodProvider {
 
     if (!result.status || !result.order) {
       const errors = this.extractErrors(result.msg);
+      // Pictorem returns status:false when the quote was deleted ("remove quote").
+      // Treat this as a cancellation rather than a transient error so the item
+      // transitions to 'cancelled' and the cron stops retrying.
+      if (/not.?found/i.test(errors)) {
+        this.logger.warn(
+          `Pictorem order ${podOrderId} not found (likely removed) — treating as cancelled`,
+        );
+        return { podOrderId, status: 'cancelled', rawResponse: result };
+      }
       throw new ServiceUnavailableException(
         `Pictorem getorderstatus failed for orderid=${podOrderId}: ${errors}`,
       );
@@ -263,11 +272,13 @@ export class PictoremProvider implements PodProvider {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   cancel(_podOrderId: string): Promise<void> {
-    // Pictorem does not expose a cancellation endpoint in ArtFlow 0.1.
-    // Cancellations must be handled manually by contacting Pictorem support.
+    // Pictorem (ArtFlow 0.1) has no cancellation endpoint.
+    // To cancel, open the Pictorem panel and use "remove quote" on the order.
+    // The next status sync will detect the deletion and mark the item cancelled.
     return Promise.reject(
       new NotImplementedException(
-        'Pictorem does not support API cancellation. Contact support manually.',
+        'Pictorem no cancela por API: elimina el presupuesto (remove quote) en su panel. ' +
+          'El siguiente sync de estado lo detectará y marcará el item como cancelado.',
       ),
     );
   }

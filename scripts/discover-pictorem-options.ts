@@ -114,6 +114,32 @@ async function main() {
     '1|canvas|stretched|horizontal|16|20|bordercolor|c15|regular',
   ]);
 
+  // Canvas framing: probe whether floater/gallery framing is reachable via API
+  await probeAll('CANVAS framing — type variants', [
+    '1|canvas|floater|horizontal|16|20',
+    '1|canvas|gallery|horizontal|16|20',
+    '1|canvas|framed|horizontal|16|20',
+    '1|canvas|frame|horizontal|16|20',
+    '1|canvas|floatframe|horizontal|16|20',
+    '1|canvas|floaterframe|horizontal|16|20',
+  ]);
+  await probeAll('CANVAS framing — additional codes', [
+    '1|canvas|stretched|horizontal|16|20|frame',
+    '1|canvas|stretched|horizontal|16|20|framed',
+    '1|canvas|stretched|horizontal|16|20|floaterframe',
+    '1|canvas|stretched|horizontal|16|20|c15|floaterframe',
+    '1|canvas|stretched|horizontal|16|20|c15|floater|black',
+    '1|canvas|stretched|horizontal|16|20|c15|floater|blackframe',
+    '1|canvas|stretched|horizontal|16|20|c15|floater|white',
+    '1|canvas|stretched|horizontal|16|20|c15|floater|natural',
+    '1|canvas|stretched|horizontal|16|20|c15|floater|walnut',
+    '1|canvas|stretched|horizontal|16|20|floater|black',
+    '1|canvas|stretched|horizontal|16|20|floater|blackframe',
+    '1|canvas|stretched|horizontal|16|20|c15|gallery|black',
+    '1|canvas|stretched|horizontal|16|20|c2|floater|black',
+    '1|canvas|stretched|horizontal|16|20|c15|floater|black|bordercolorhex|000000',
+  ]);
+
   // Full canvas sizes for catalog
   await probeAll('CANVAS|STRETCHED full size list', [
     [4,6],[5,7],[6,8],[6,9],[8,8],[8,10],[8,12],[10,10],[10,8],

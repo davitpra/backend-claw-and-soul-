@@ -92,6 +92,28 @@ async function main() {
   // Acrylic options
   await probe('ACRYLIC|AL additional', ['none', 'noframe', 'frame', 'regular'].map(o => `1|acrylic|al|horizontal|12|16|${o}`));
 
+  // Paper types: test colored frames per type
+  const paperTypes = ['photo', 'fineart', 'lustre', 'gloss', 'matte', 'satin', 'metallic', 'hd'];
+  const coloredFrameCombos = [
+    'frame', 'frame|plexiglass', 'frame|plexiglass|wire',
+    'blackframe', 'blackframe|plexiglass', 'blackframe|plexiglass|wire',
+    'whiteframe', 'whiteframe|plexiglass', 'whiteframe|plexiglass|wire',
+    'brownframe', 'brownframe|plexiglass', 'brownframe|plexiglass|wire',
+    'naturalframe', 'naturalframe|plexiglass', 'naturalframe|plexiglass|wire',
+  ];
+  for (const t of paperTypes) {
+    await probe(`PAPER|${t.toUpperCase()} frame options`, coloredFrameCombos.map(f => `1|paper|${t}|vertical|12|18|${f}`));
+  }
+
+  // Canvas: test bordercolorhex requirement
+  await probe('CANVAS with bordercolorhex', [
+    '1|canvas|stretched|horizontal|16|20|c15|regular|mirrorimage|bordercolorhex|000000',
+    '1|canvas|stretched|horizontal|16|20|bordercolorhex|000000|c15|regular',
+    '1|canvas|stretched|horizontal|16|20|c15|regular|bordercolorhex|000000',
+    '1|canvas|stretched|horizontal|16|20|mirrorimage|bordercolorhex|000000',
+    '1|canvas|stretched|horizontal|16|20|bordercolor|c15|regular',
+  ]);
+
   // Full canvas sizes for catalog
   await probeAll('CANVAS|STRETCHED full size list', [
     [4,6],[5,7],[6,8],[6,9],[8,8],[8,10],[8,12],[10,10],[10,8],

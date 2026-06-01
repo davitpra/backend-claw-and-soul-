@@ -1,13 +1,21 @@
-export interface PodCatalogOption {
-  code: string;
+export interface PodCatalogChoice {
+  value: string;   // UI key — unique within the group
   label: string;
-  additional: string[];
+  codes: string[]; // Pictorem additional codes this choice contributes (in canonical order)
+}
+
+export interface PodCatalogOptionGroup {
+  key: string;
+  label: string;
+  control: 'select' | 'checkbox';
+  choices: PodCatalogChoice[];
+  default: string; // value of the default/unset choice
 }
 
 export interface PodCatalogType {
   code: string;
   label: string;
-  options: PodCatalogOption[];
+  optionGroups: PodCatalogOptionGroup[];
 }
 
 export interface PodCatalogSize {
@@ -47,20 +55,40 @@ const COMMON_SIZES: PodCatalogSize[] = [
   { width: 36, height: 48, label: '36" × 48"' },
 ];
 
-const CANVAS_OPTIONS: PodCatalogOption[] = [
-  { code: 'none', label: 'Sin opciones', additional: [] },
-  { code: 'mirrorimage', label: 'Mirror image (reflejo en bordes)', additional: ['mirrorimage'] },
-  { code: 'c15_regular_mirror', label: 'Wrap 1.5" + mirror image', additional: ['c15', 'regular', 'mirrorimage'] },
+// Validated against Pictorem validatepreorder/ API.
+// Paper: only `frame|plexiglass` or empty are valid (colored frames give Error::5900).
+const PAPER_OPTION_GROUPS: PodCatalogOptionGroup[] = [
+  {
+    key: 'frame',
+    label: 'Marco',
+    control: 'checkbox',
+    choices: [
+      { value: 'off', label: 'Sin marco', codes: [] },
+      { value: 'on', label: 'Con marco (incluye plexiglás)', codes: ['frame', 'plexiglass'] },
+    ],
+    default: 'off',
+  },
 ];
 
-const PAPER_OPTIONS: PodCatalogOption[] = [
-  { code: 'none', label: 'Sin marco', additional: [] },
-  { code: 'frame_plexi', label: 'Marco + plexiglás', additional: ['frame', 'plexiglass'] },
+// Canvas: valid clean options are mirrorimage and c15|mirrorimage|regular.
+// Canonical order (from preordersanitize): wrap → border → frame_type.
+const CANVAS_OPTION_GROUPS: PodCatalogOptionGroup[] = [
+  {
+    key: 'border',
+    label: 'Borde / wrap',
+    control: 'select',
+    choices: [
+      { value: 'none', label: 'Sin opciones', codes: [] },
+      { value: 'mirrorimage', label: 'Mirror image', codes: ['mirrorimage'] },
+      { value: 'c15_mirror_regular', label: 'Wrap 1.5" + mirror image', codes: ['c15', 'mirrorimage', 'regular'] },
+    ],
+    default: 'none',
+  },
 ];
 
-const RIGID_OPTIONS: PodCatalogOption[] = [
-  { code: 'none', label: 'Sin opciones', additional: [] },
-];
+// Rigid materials (metal, acrylic, wood, panel, aluminum, glass):
+// No meaningful additional options — all codes give Error::5900 except none/empty.
+const RIGID_OPTION_GROUPS: PodCatalogOptionGroup[] = [];
 
 export const PICTOREM_CATALOG: PodCatalog = {
   materials: [
@@ -69,11 +97,11 @@ export const PICTOREM_CATALOG: PodCatalog = {
       label: 'Canvas',
       sizes: COMMON_SIZES,
       types: [
-        { code: 'stretched', label: 'Stretched (estirado)', options: CANVAS_OPTIONS },
-        { code: 'roll', label: 'Roll (rollo)', options: CANVAS_OPTIONS },
-        { code: 'gallery', label: 'Gallery wrap', options: CANVAS_OPTIONS },
-        { code: 'print', label: 'Canvas print', options: CANVAS_OPTIONS },
-        { code: 'classic', label: 'Classic', options: CANVAS_OPTIONS },
+        { code: 'stretched', label: 'Stretched (estirado)', optionGroups: CANVAS_OPTION_GROUPS },
+        { code: 'roll', label: 'Roll (rollo)', optionGroups: CANVAS_OPTION_GROUPS },
+        { code: 'gallery', label: 'Gallery wrap', optionGroups: CANVAS_OPTION_GROUPS },
+        { code: 'print', label: 'Canvas print', optionGroups: CANVAS_OPTION_GROUPS },
+        { code: 'classic', label: 'Classic', optionGroups: CANVAS_OPTION_GROUPS },
       ],
     },
     {
@@ -81,16 +109,16 @@ export const PICTOREM_CATALOG: PodCatalog = {
       label: 'Papel',
       sizes: COMMON_SIZES,
       types: [
-        { code: 'poster', label: 'Poster', options: PAPER_OPTIONS },
-        { code: 'photo', label: 'Foto', options: PAPER_OPTIONS },
-        { code: 'fineart', label: 'Fine Art', options: PAPER_OPTIONS },
-        { code: 'lustre', label: 'Lustre', options: PAPER_OPTIONS },
-        { code: 'gloss', label: 'Brillo (gloss)', options: PAPER_OPTIONS },
-        { code: 'matte', label: 'Mate', options: PAPER_OPTIONS },
-        { code: 'satin', label: 'Satinado', options: PAPER_OPTIONS },
-        { code: 'metallic', label: 'Metálico', options: PAPER_OPTIONS },
-        { code: 'hd', label: 'HD', options: PAPER_OPTIONS },
-        { code: 'al', label: 'AL', options: PAPER_OPTIONS },
+        { code: 'poster', label: 'Poster', optionGroups: PAPER_OPTION_GROUPS },
+        { code: 'photo', label: 'Foto', optionGroups: PAPER_OPTION_GROUPS },
+        { code: 'fineart', label: 'Fine Art', optionGroups: PAPER_OPTION_GROUPS },
+        { code: 'lustre', label: 'Lustre', optionGroups: PAPER_OPTION_GROUPS },
+        { code: 'gloss', label: 'Brillo (gloss)', optionGroups: PAPER_OPTION_GROUPS },
+        { code: 'matte', label: 'Mate', optionGroups: PAPER_OPTION_GROUPS },
+        { code: 'satin', label: 'Satinado', optionGroups: PAPER_OPTION_GROUPS },
+        { code: 'metallic', label: 'Metálico', optionGroups: PAPER_OPTION_GROUPS },
+        { code: 'hd', label: 'HD', optionGroups: PAPER_OPTION_GROUPS },
+        { code: 'al', label: 'AL', optionGroups: PAPER_OPTION_GROUPS },
       ],
     },
     {
@@ -98,11 +126,11 @@ export const PICTOREM_CATALOG: PodCatalog = {
       label: 'Metal',
       sizes: COMMON_SIZES,
       types: [
-        { code: 'al', label: 'Aluminum', options: RIGID_OPTIONS },
-        { code: 'hd', label: 'HD Metal', options: RIGID_OPTIONS },
-        { code: 'print', label: 'Metal print', options: RIGID_OPTIONS },
-        { code: 'matte', label: 'Mate', options: RIGID_OPTIONS },
-        { code: 'gloss', label: 'Brillante', options: RIGID_OPTIONS },
+        { code: 'al', label: 'Aluminum', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'hd', label: 'HD Metal', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'print', label: 'Metal print', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'matte', label: 'Mate', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'gloss', label: 'Brillante', optionGroups: RIGID_OPTION_GROUPS },
       ],
     },
     {
@@ -110,11 +138,11 @@ export const PICTOREM_CATALOG: PodCatalog = {
       label: 'Acrílico',
       sizes: COMMON_SIZES,
       types: [
-        { code: 'al', label: 'Acrylic', options: RIGID_OPTIONS },
-        { code: 'hd', label: 'HD Acrylic', options: RIGID_OPTIONS },
-        { code: 'print', label: 'Acrylic print', options: RIGID_OPTIONS },
-        { code: 'matte', label: 'Mate', options: RIGID_OPTIONS },
-        { code: 'gloss', label: 'Brillante', options: RIGID_OPTIONS },
+        { code: 'al', label: 'Acrylic', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'hd', label: 'HD Acrylic', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'print', label: 'Acrylic print', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'matte', label: 'Mate', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'gloss', label: 'Brillante', optionGroups: RIGID_OPTION_GROUPS },
       ],
     },
     {
@@ -122,11 +150,11 @@ export const PICTOREM_CATALOG: PodCatalog = {
       label: 'Madera',
       sizes: COMMON_SIZES,
       types: [
-        { code: 'al', label: 'Wood print', options: RIGID_OPTIONS },
-        { code: 'hd', label: 'HD Wood', options: RIGID_OPTIONS },
-        { code: 'print', label: 'Wood print', options: RIGID_OPTIONS },
-        { code: 'matte', label: 'Mate', options: RIGID_OPTIONS },
-        { code: 'gloss', label: 'Brillante', options: RIGID_OPTIONS },
+        { code: 'al', label: 'Wood print', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'hd', label: 'HD Wood', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'print', label: 'Wood print', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'matte', label: 'Mate', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'gloss', label: 'Brillante', optionGroups: RIGID_OPTION_GROUPS },
       ],
     },
     {
@@ -134,11 +162,11 @@ export const PICTOREM_CATALOG: PodCatalog = {
       label: 'Panel',
       sizes: COMMON_SIZES,
       types: [
-        { code: 'al', label: 'Panel', options: RIGID_OPTIONS },
-        { code: 'hd', label: 'HD Panel', options: RIGID_OPTIONS },
-        { code: 'print', label: 'Panel print', options: RIGID_OPTIONS },
-        { code: 'matte', label: 'Mate', options: RIGID_OPTIONS },
-        { code: 'gloss', label: 'Brillante', options: RIGID_OPTIONS },
+        { code: 'al', label: 'Panel', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'hd', label: 'HD Panel', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'print', label: 'Panel print', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'matte', label: 'Mate', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'gloss', label: 'Brillante', optionGroups: RIGID_OPTION_GROUPS },
       ],
     },
     {
@@ -146,11 +174,11 @@ export const PICTOREM_CATALOG: PodCatalog = {
       label: 'Aluminio',
       sizes: COMMON_SIZES,
       types: [
-        { code: 'al', label: 'Aluminum', options: RIGID_OPTIONS },
-        { code: 'hd', label: 'HD', options: RIGID_OPTIONS },
-        { code: 'print', label: 'Print', options: RIGID_OPTIONS },
-        { code: 'matte', label: 'Mate', options: RIGID_OPTIONS },
-        { code: 'gloss', label: 'Brillante', options: RIGID_OPTIONS },
+        { code: 'al', label: 'Aluminum', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'hd', label: 'HD', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'print', label: 'Print', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'matte', label: 'Mate', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'gloss', label: 'Brillante', optionGroups: RIGID_OPTION_GROUPS },
       ],
     },
     {
@@ -158,11 +186,11 @@ export const PICTOREM_CATALOG: PodCatalog = {
       label: 'Vidrio',
       sizes: COMMON_SIZES,
       types: [
-        { code: 'al', label: 'Glass', options: RIGID_OPTIONS },
-        { code: 'hd', label: 'HD Glass', options: RIGID_OPTIONS },
-        { code: 'print', label: 'Glass print', options: RIGID_OPTIONS },
-        { code: 'matte', label: 'Mate', options: RIGID_OPTIONS },
-        { code: 'gloss', label: 'Brillante', options: RIGID_OPTIONS },
+        { code: 'al', label: 'Glass', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'hd', label: 'HD Glass', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'print', label: 'Glass print', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'matte', label: 'Mate', optionGroups: RIGID_OPTION_GROUPS },
+        { code: 'gloss', label: 'Brillante', optionGroups: RIGID_OPTION_GROUPS },
       ],
     },
   ],

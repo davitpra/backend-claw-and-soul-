@@ -251,11 +251,17 @@ export class StylesService {
     const style = await this.findOne(styleId);
 
     if (style.styleReferenceStorageKey) {
-      await this.storageService.delete(style.styleReferenceStorageKey).catch(() => {});
+      await this.storageService
+        .delete(style.styleReferenceStorageKey)
+        .catch(() => {});
     }
 
     const key = `styles/${styleId}/reference-${uuidv4()}`;
-    const url = await this.storageService.upload(key, file.buffer, file.mimetype);
+    const url = await this.storageService.upload(
+      key,
+      file.buffer,
+      file.mimetype,
+    );
 
     return this.prisma.style.update({
       where: { id: styleId },
@@ -267,7 +273,9 @@ export class StylesService {
     const style = await this.findOne(styleId);
 
     if (style.styleReferenceStorageKey) {
-      await this.storageService.delete(style.styleReferenceStorageKey).catch(() => {});
+      await this.storageService
+        .delete(style.styleReferenceStorageKey)
+        .catch(() => {});
     }
 
     return this.prisma.style.update({

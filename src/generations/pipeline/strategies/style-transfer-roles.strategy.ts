@@ -54,7 +54,7 @@ export class StyleTransferRolesStrategy extends BaseStyleStrategy {
       );
     }
 
-    const styleReferenceUrl = style.styleReferenceUrl as string;
+    const styleReferenceUrl = style.styleReferenceUrl;
 
     const falModel = imageGenConfig.model ?? 'fal-ai/flux/dev';
     const falParameters = (imageGenConfig.parameters ?? {}) as Record<

@@ -117,21 +117,27 @@ export class AdminOrdersController {
     return { providers: this.podService.listProviders() };
   }
 
+  @Get('pod/catalog')
+  @ApiOperation({ summary: 'Get Pictorem product catalog (materials, types, sizes, options)' })
+  podCatalog() {
+    return this.podService.getCatalog();
+  }
+
   @Get('pod/settings')
   @ApiOperation({ summary: 'Get current POD auto-fulfillment enabled state' })
-  podSettingsGet() {
-    return this.podService.getPodEnabled();
+  async podSettingsGet() {
+    return await this.podService.getPodEnabled();
   }
 
   @Patch('pod/settings')
   @ApiOperation({
     summary: 'Enable or disable POD auto-fulfillment at runtime',
   })
-  podSettingsPatch(
+  async podSettingsPatch(
     @Body('enabled') enabled: boolean,
     @CurrentUser() user?: { id: string },
   ) {
-    return this.podService.setPodEnabled(enabled, user?.id);
+    return await this.podService.setPodEnabled(enabled, user?.id);
   }
 
   @Get(':id')
@@ -249,7 +255,7 @@ export class AdminOrdersController {
   ) {
     await this.ordersQueue.add(
       ORDERS_JOB_NAMES.POD_SUBMIT,
-      { orderItemId: itemId, force: force ?? false },
+      { orderItemId: itemId, force: force ?? false, manual: true },
       ORDERS_JOB_OPTIONS,
     );
     return { ok: true, queued: true, orderItemId: itemId };

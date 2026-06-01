@@ -2,6 +2,8 @@ export const ORDERS_QUEUE = 'orders-sync';
 
 export const ORDERS_JOB_NAMES = {
   INGEST: 'ingest',
+  POD_SUBMIT: 'pod_submit',
+  POD_SYNC: 'pod_sync',
 } as const;
 
 export const ORDERS_JOB_OPTIONS = {

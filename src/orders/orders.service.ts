@@ -4,9 +4,18 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { ShopifyOrderPayload } from './dto/shopify-order.dto';
 import { Prisma } from '@prisma/client';
+import {
+  ORDERS_QUEUE,
+  ORDERS_JOB_NAMES,
+  ORDERS_JOB_OPTIONS,
+} from './constants/queues.constants';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   paid: ['in_production', 'cancelled', 'refunded'],
@@ -21,7 +30,11 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService,
+    @InjectQueue(ORDERS_QUEUE) private readonly ordersQueue: Queue,
+  ) {}
 
   async ingestShopifyOrder(
     payload: ShopifyOrderPayload,
@@ -131,6 +144,11 @@ export class OrdersService {
         payload: { topic, webhookId, shopifyOrderId } as Prisma.InputJsonValue,
       },
     });
+
+    // Auto-submit POD items for paid orders
+    if (payload.financial_status === 'paid') {
+      await this.enqueuePodItems(order.id);
+    }
 
     this.logger.log(
       `Ingested order ${payload.name} (${shopifyOrderId}) → DB id ${order.id}`,
@@ -441,5 +459,69 @@ export class OrdersService {
       where: { id: itemId },
       data: { generationId },
     });
+  }
+
+  async updateItemPrintImage(
+    orderId: string,
+    itemId: string,
+    file: Express.Multer.File,
+    adminUserId?: string,
+  ): Promise<{ printImageUrl: string }> {
+    const item = await this.prisma.orderItem.findFirst({
+      where: { id: itemId, orderId },
+    });
+    if (!item) throw new NotFoundException('Order item not found');
+
+    if (item.printImageStorageKey) {
+      await this.storageService
+        .delete(item.printImageStorageKey)
+        .catch(() => null);
+    }
+
+    const key = `orders/${orderId}/items/${itemId}/print/${uuidv4()}`;
+    const url = await this.storageService.upload(
+      key,
+      file.buffer,
+      file.mimetype,
+    );
+
+    await this.prisma.orderItem.update({
+      where: { id: itemId },
+      data: { printImageUrl: url, printImageStorageKey: key },
+    });
+
+    await this.prisma.orderEvent.create({
+      data: {
+        orderId,
+        orderItemId: itemId,
+        eventType: 'print_image_uploaded',
+        source: 'admin',
+        userId: adminUserId ?? null,
+        payload: { printImageUrl: url } as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return { printImageUrl: url };
+  }
+
+  /** Enqueue POD_SUBMIT for all pod items in an order that haven't been submitted yet. */
+  async enqueuePodItems(orderId: string): Promise<void> {
+    const items = await this.prisma.orderItem.findMany({
+      where: {
+        orderId,
+        fulfillmentMethod: 'pod',
+        podOrderId: null,
+      },
+      select: { id: true },
+    });
+
+    for (const item of items) {
+      await this.ordersQueue.add(
+        ORDERS_JOB_NAMES.POD_SUBMIT,
+        { orderItemId: item.id },
+        ORDERS_JOB_OPTIONS,
+      );
+      this.logger.log(`Enqueued POD_SUBMIT for item ${item.id}`);
+    }
   }
 }

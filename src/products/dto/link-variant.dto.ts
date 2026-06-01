@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
+import { PodConfigDto } from './pod-config.dto';
 
 export class LinkVariantDto {
   @ApiProperty({ example: '12345678901234' })
@@ -24,4 +32,14 @@ export class LinkVariantDto {
   @IsString()
   @IsOptional()
   shopifyVariantOption?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Pictorem POD config for this variant (material, type, dimensions, options)',
+    type: PodConfigDto,
+  })
+  @ValidateNested()
+  @Type(() => PodConfigDto)
+  @IsOptional()
+  podConfig?: PodConfigDto;
 }

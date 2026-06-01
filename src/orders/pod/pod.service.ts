@@ -3,8 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PodProviderRegistry } from './pod-provider.registry';
+import { PICTOREM_CATALOG, PodCatalog } from './catalog/pictorem-catalog';
 
 const DEFAULT_POD_PROVIDER = 'pictorem';
+const POD_ENABLED_KEY = 'orders_pod_enabled';
 
 @Injectable()
 export class PodService {
@@ -16,7 +18,11 @@ export class PodService {
     private readonly registry: PodProviderRegistry,
   ) {}
 
-  private isEnabled(): boolean {
+  private async isEnabled(): Promise<boolean> {
+    const row = await this.prisma.appSetting.findUnique({
+      where: { key: POD_ENABLED_KEY },
+    });
+    if (row) return row.value === 'true';
     return this.configService.get<string>('ORDERS_POD_ENABLED') === 'true';
   }
 
@@ -44,23 +50,46 @@ export class PodService {
     return this.registry.list();
   }
 
-  getPodEnabled(): { enabled: boolean } {
-    return { enabled: this.isEnabled() };
+  getCatalog(): PodCatalog {
+    return PICTOREM_CATALOG;
   }
 
-  setPodEnabled(enabled: boolean, userId?: string): { enabled: boolean } {
+  async getPodEnabled(): Promise<{ enabled: boolean; source: 'db' | 'env-default' }> {
+    const row = await this.prisma.appSetting.findUnique({
+      where: { key: POD_ENABLED_KEY },
+    });
+    if (row) return { enabled: row.value === 'true', source: 'db' };
+    return {
+      enabled: this.configService.get<string>('ORDERS_POD_ENABLED') === 'true',
+      source: 'env-default',
+    };
+  }
+
+  async setPodEnabled(enabled: boolean, userId?: string): Promise<{ enabled: boolean }> {
     this.logger.log(
       `POD auto-fulfillment ${enabled ? 'enabled' : 'disabled'} by user=${userId ?? 'system'}`,
     );
+    await this.prisma.appSetting.upsert({
+      where: { key: POD_ENABLED_KEY },
+      create: { key: POD_ENABLED_KEY, value: String(enabled), updatedBy: userId },
+      update: { value: String(enabled), updatedBy: userId },
+    });
     return { enabled };
   }
 
   /**
    * Submit a single OrderItem to the configured POD provider.
    * @param force — if true, re-submit even if podOrderId already exists.
+   * @param manual — if true, this is an explicit admin action ("Enviar a
+   *   Pictorem") and bypasses the global auto-fulfillment toggle. The toggle
+   *   only gates the automatic on-ingest path.
    */
-  async submitItem(orderItemId: string, force = false): Promise<void> {
-    if (!this.isEnabled()) {
+  async submitItem(
+    orderItemId: string,
+    force = false,
+    manual = false,
+  ): Promise<void> {
+    if (!manual && !(await this.isEnabled())) {
       this.logger.debug(`POD disabled — skipping submitItem ${orderItemId}`);
       return;
     }
@@ -96,8 +125,10 @@ export class PodService {
       return;
     }
 
-    // Resolve image URL
-    const imageUrl = item.generation?.resultUrl ?? item.imageUrl;
+    // Resolve image URL — prefer the admin-uploaded print image, then the
+    // generation result, then the original Shopify line-item image.
+    const imageUrl =
+      item.printImageUrl ?? item.generation?.resultUrl ?? item.imageUrl;
     if (!imageUrl) {
       this.logger.warn(
         `submitItem: item ${orderItemId} has no imageUrl — skipping (pod_skip)`,

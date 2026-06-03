@@ -38,9 +38,19 @@ interface PodConfigShape {
 export interface EnhanceInfo {
   isPod: boolean;
   sourceUrl: string | null;
-  currentPx: { width: number; height: number } | null;
+  /** Pixel dimensions of the SOURCE art (enhancement input). */
+  sourcePx: { width: number; height: number } | null;
   printInches: { width: number; height: number } | null;
-  currentDpi: number | null;
+  /** DPI of the SOURCE art at the print size — drives the upscale recommendation. */
+  sourceDpi: number | null;
+  /**
+   * URL of the CURRENT print image (the file POD will ship). The client measures
+   * its delivered dimensions to compute the real print DPI — this handles the
+   * Cloudinary engine, whose stored asset is the un-transformed base while the
+   * upscale lives in the delivery URL (`c_scale,…`), so a server-side probe of the
+   * storage key would under-report. Measuring the delivered URL matches PrintProofModal.
+   */
+  printImageUrl: string | null;
   recommendedUpscale: 0 | 2 | 4;
   alreadyEnhanced: boolean;
 }
@@ -69,33 +79,38 @@ export class ImageEnhancementService {
     const original = this.resolveOriginal(item);
     const printInches = this.resolvePrintInches(item);
 
-    const currentPx = original?.storageKey
+    const sourcePx = original?.storageKey
       ? await this.probeDimensions(original.storageKey)
       : null;
-
-    let currentDpi: number | null = null;
-    if (currentPx && printInches) {
-      currentDpi = Math.floor(
-        Math.min(
-          currentPx.width / printInches.width,
-          currentPx.height / printInches.height,
-        ),
-      );
-    }
+    const sourceDpi = this.dpiFor(sourcePx, printInches);
 
     return {
       isPod: item.fulfillmentMethod === 'pod',
       sourceUrl: original?.url ?? null,
-      currentPx,
+      sourcePx,
       printInches,
-      currentDpi,
-      recommendedUpscale: this.recommendUpscale(currentDpi),
+      sourceDpi,
+      // The client measures this delivered URL to get the real print DPI (the same
+      // file PrintProofModal renders), so both modals always agree.
+      printImageUrl: item.printImageUrl ?? null,
+      recommendedUpscale: this.recommendUpscale(sourceDpi),
       // "Enhanced" = the print image differs from the source art (or is a stale
       // value with no source) → revert is meaningful.
       alreadyEnhanced:
         Boolean(item.printImageUrl) &&
         item.printImageUrl !== item.printSourceUrl,
     };
+  }
+
+  /** DPI of an image at a given print size (limited by the tighter edge). */
+  private dpiFor(
+    px: { width: number; height: number } | null,
+    inches: { width: number; height: number } | null,
+  ): number | null {
+    if (!px || !inches) return null;
+    return Math.floor(
+      Math.min(px.width / inches.width, px.height / inches.height),
+    );
   }
 
   /**
@@ -372,19 +387,27 @@ export class ImageEnhancementService {
     options: EnhanceDto,
     capEdge?: number,
   ): Promise<Buffer> {
-    const maxWidth =
-      capEdge ??
-      (printInches ? Math.round(printInches.width * PRINT_DPI) : MAX_EDGE);
-    const maxHeight =
-      capEdge ??
-      (printInches ? Math.round(printInches.height * PRINT_DPI) : MAX_EDGE);
+    let resizeOpts: sharp.ResizeOptions;
+    if (options.fitToFormat && printInches && !capEdge) {
+      // Crop to the EXACT print aspect ratio (centered) so Pictorem never crops.
+      // Cap to the print size at PRINT_DPI without enlarging beyond the source.
+      resizeOpts = await this.coverResizeToFormat(buffer, printInches);
+    } else {
+      const maxWidth =
+        capEdge ??
+        (printInches ? Math.round(printInches.width * PRINT_DPI) : MAX_EDGE);
+      const maxHeight =
+        capEdge ??
+        (printInches ? Math.round(printInches.height * PRINT_DPI) : MAX_EDGE);
+      resizeOpts = {
+        width: maxWidth,
+        height: maxHeight,
+        fit: 'inside',
+        withoutEnlargement: true,
+      };
+    }
 
-    let pipe = sharp(buffer).resize({
-      width: maxWidth,
-      height: maxHeight,
-      fit: 'inside',
-      withoutEnlargement: true,
-    });
+    let pipe = sharp(buffer).resize(resizeOpts);
 
     // Auto-levels approximates Cloudinary's improve / auto_color.
     if (options.improve || options.autoColor) pipe = pipe.normalise();
@@ -407,6 +430,29 @@ export class ImageEnhancementService {
     }
 
     return pipe.jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer();
+  }
+
+  /**
+   * Cover-crop options that match the print aspect ratio exactly, centered,
+   * sized to PRINT_DPI but never enlarged beyond the source resolution.
+   */
+  private async coverResizeToFormat(
+    buffer: Buffer,
+    printInches: { width: number; height: number },
+  ): Promise<sharp.ResizeOptions> {
+    const targetW = Math.round(printInches.width * PRINT_DPI);
+    const targetH = Math.round(printInches.height * PRINT_DPI);
+
+    const meta = await sharp(buffer).metadata();
+    let width = targetW;
+    let height = targetH;
+    if (meta.width && meta.height) {
+      const factor = Math.min(1, meta.width / targetW, meta.height / targetH);
+      width = Math.max(1, Math.round(targetW * factor));
+      height = Math.max(1, Math.round(targetH * factor));
+    }
+
+    return { width, height, fit: 'cover', position: 'centre' };
   }
 
   /** Download a remote image into a Buffer. */
@@ -439,10 +485,10 @@ export class ImageEnhancementService {
     return null;
   }
 
-  private recommendUpscale(currentDpi: number | null): 0 | 2 | 4 {
-    if (currentDpi === null) return 2; // unknown resolution — suggest a safe upscale
-    if (currentDpi >= TARGET_DPI) return 0;
-    const factor = Math.ceil(TARGET_DPI / currentDpi);
+  private recommendUpscale(sourceDpi: number | null): 0 | 2 | 4 {
+    if (sourceDpi === null) return 2; // unknown resolution — suggest a safe upscale
+    if (sourceDpi >= TARGET_DPI) return 0;
+    const factor = Math.ceil(TARGET_DPI / sourceDpi);
     return factor <= 1 ? 0 : factor <= 2 ? 2 : 4;
   }
 
@@ -453,7 +499,15 @@ export class ImageEnhancementService {
     includeScale: boolean,
   ): Record<string, string | number>[] {
     const t: Record<string, string | number>[] = [];
-    if (includeScale && options.upscale && printInches) {
+    if (includeScale && options.fitToFormat && printInches) {
+      // Crop to the exact print aspect ratio (centered) — Pictorem won't crop.
+      t.push({
+        width: Math.min(Math.round(printInches.width * PRINT_DPI), MAX_EDGE),
+        height: Math.min(Math.round(printInches.height * PRINT_DPI), MAX_EDGE),
+        crop: 'fill',
+        gravity: 'center',
+      });
+    } else if (includeScale && options.upscale && printInches) {
       const width = Math.min(
         Math.round(printInches.width * PRINT_DPI),
         MAX_EDGE,

@@ -89,4 +89,14 @@ export class EnhanceDto {
   @IsOptional()
   @IsBoolean()
   improve?: boolean;
+
+  @ApiProperty({
+    description:
+      'Crop the image to the exact product print aspect ratio (centered) so ' +
+      'Pictorem does not crop it — guarantees centering and scale.',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  fitToFormat?: boolean;
 }

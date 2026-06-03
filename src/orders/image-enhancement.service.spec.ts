@@ -101,11 +101,12 @@ describe('ImageEnhancementService', () => {
       const info = await service.getEnhanceInfo('order-1', 'item-1');
 
       expect(cldResource).toHaveBeenCalledWith('gen-key');
-      expect(info.currentDpi).toBe(150);
+      expect(info.sourceDpi).toBe(150);
       expect(info.recommendedUpscale).toBe(0);
       expect(info.printInches).toEqual({ width: 20, height: 20 });
       expect(info.sourceUrl).toBe(GEN_URL);
       expect(info.alreadyEnhanced).toBe(false);
+      expect(info.printImageUrl).toBeNull();
     });
 
     it('returns unknown DPI and a safe upscale when source is not on Cloudinary', async () => {
@@ -116,7 +117,7 @@ describe('ImageEnhancementService', () => {
       const info = await service.getEnhanceInfo('order-1', 'item-1');
 
       expect(cldResource).not.toHaveBeenCalled();
-      expect(info.currentDpi).toBeNull();
+      expect(info.sourceDpi).toBeNull();
       expect(info.recommendedUpscale).toBe(2);
       expect(info.sourceUrl).toBe('https://shopify.test/raw.jpg');
     });

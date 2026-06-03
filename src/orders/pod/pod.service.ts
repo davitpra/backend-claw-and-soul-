@@ -54,7 +54,10 @@ export class PodService {
     return PICTOREM_CATALOG;
   }
 
-  async getPodEnabled(): Promise<{ enabled: boolean; source: 'db' | 'env-default' }> {
+  async getPodEnabled(): Promise<{
+    enabled: boolean;
+    source: 'db' | 'env-default';
+  }> {
     const row = await this.prisma.appSetting.findUnique({
       where: { key: POD_ENABLED_KEY },
     });
@@ -65,13 +68,20 @@ export class PodService {
     };
   }
 
-  async setPodEnabled(enabled: boolean, userId?: string): Promise<{ enabled: boolean }> {
+  async setPodEnabled(
+    enabled: boolean,
+    userId?: string,
+  ): Promise<{ enabled: boolean }> {
     this.logger.log(
       `POD auto-fulfillment ${enabled ? 'enabled' : 'disabled'} by user=${userId ?? 'system'}`,
     );
     await this.prisma.appSetting.upsert({
       where: { key: POD_ENABLED_KEY },
-      create: { key: POD_ENABLED_KEY, value: String(enabled), updatedBy: userId },
+      create: {
+        key: POD_ENABLED_KEY,
+        value: String(enabled),
+        updatedBy: userId,
+      },
       update: { value: String(enabled), updatedBy: userId },
     });
     return { enabled };

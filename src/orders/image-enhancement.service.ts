@@ -55,12 +55,6 @@ export interface EnhanceInfo {
   alreadyEnhanced: boolean;
 }
 
-/** A Cloudinary delivery reference: either an uploaded public_id or a remote URL fetched on the fly. */
-interface CldRef {
-  type: 'upload' | 'fetch';
-  id: string;
-}
-
 @Injectable()
 export class ImageEnhancementService {
   private readonly logger = new Logger(ImageEnhancementService.name);
@@ -114,9 +108,8 @@ export class ImageEnhancementService {
   }
 
   /**
-   * Build a non-committed preview (URL for the Cloudinary engine, data URI for
-   * the sharp engine). The AI upscale is NEVER run here — preview only reflects
-   * the colour/sharpness adjustments.
+   * Build a non-committed preview returned inline as a data URI. The AI upscale
+   * is NEVER run here — preview only reflects the colour/sharpness adjustments.
    */
   async previewEnhance(
     orderId: string,
@@ -132,24 +125,8 @@ export class ImageEnhancementService {
     }
 
     const willUpscale = Boolean(options.upscale);
-    const engine = options.engine ?? 'sharp';
 
-    if (engine === 'cloudinary') {
-      const ref: CldRef = original.storageKey
-        ? { type: 'upload', id: original.storageKey }
-        : { type: 'fetch', id: original.url };
-      const transformation = this.buildCloudinaryTransformation(
-        null,
-        options,
-        false, // no upscale scaling in preview
-      );
-      return {
-        previewUrl: this.cloudinaryUrl(ref, transformation),
-        willUpscale,
-      };
-    }
-
-    // sharp engine — render a small preview and return it inline as a data URI
+    // Render a small preview and return it inline as a data URI.
     const bytes = await this.download(original.url);
     const jpeg = await this.buildSharpJpeg(bytes, null, options, 900);
     const previewUrl = `data:image/jpeg;base64,${jpeg.toString('base64')}`;
@@ -157,8 +134,8 @@ export class ImageEnhancementService {
   }
 
   /**
-   * Run the enhancement with the selected engine and persist the result as a
-   * freshly uploaded Cloudinary asset. Always sourced from the ORIGINAL image
+   * Run the enhancement (fal.ai upscale + sharp adjustments) and persist the
+   * result as a freshly uploaded asset. Always sourced from the ORIGINAL image
    * (never the prior printImageUrl) so re-running never compounds or breaks.
    */
   async applyEnhance(
@@ -176,13 +153,14 @@ export class ImageEnhancementService {
     }
 
     const printInches = this.resolvePrintInches(item);
-    const engine = options.engine ?? 'sharp';
     const key = `orders/${orderId}/items/${itemId}/print/${uuidv4()}`;
 
-    const printImageUrl =
-      engine === 'cloudinary'
-        ? await this.applyCloudinary(key, original, printInches, options)
-        : await this.applySharp(key, original, printInches, options);
+    const printImageUrl = await this.applySharp(
+      key,
+      original,
+      printInches,
+      options,
+    );
 
     // Replace the previous enhanced asset, but NEVER delete the source art
     // (when printImage still points at the manual-upload source).
@@ -206,7 +184,6 @@ export class ImageEnhancementService {
       'print_image_enhanced',
       adminUserId,
       {
-        engine,
         options: options as unknown as Record<string, unknown>,
         printImageUrl,
       },
@@ -215,29 +192,7 @@ export class ImageEnhancementService {
     return { printImageUrl };
   }
 
-  /** Motor A — store the original as a Cloudinary asset and deliver it with Cloudinary effects. */
-  private async applyCloudinary(
-    key: string,
-    original: { url: string; storageKey: string | null },
-    printInches: { width: number; height: number } | null,
-    options: EnhanceDto,
-  ): Promise<string> {
-    await cloudinary.uploader.upload(original.url, {
-      public_id: key,
-      resource_type: 'image',
-      overwrite: true,
-    });
-    const transformation = this.buildCloudinaryTransformation(
-      printInches,
-      options,
-      true,
-    );
-    const url = this.cloudinaryUrl({ type: 'upload', id: key }, transformation);
-    this.logger.log(`Enhanced item via Cloudinary engine → ${key}`);
-    return url;
-  }
-
-  /** Motor B — fal.ai upscale (optional) + sharp adjustments, stored as a flat JPEG. */
+  /** fal.ai upscale (optional) + sharp adjustments, stored as a flat JPEG. */
   private async applySharp(
     key: string,
     original: { url: string; storageKey: string | null },
@@ -269,9 +224,7 @@ export class ImageEnhancementService {
 
     const jpeg = await this.buildSharpJpeg(bytes, printInches, options);
     const url = await this.storageService.upload(key, jpeg, 'image/jpeg');
-    this.logger.log(
-      `Enhanced item via sharp engine → ${key} (${jpeg.byteLength} bytes)`,
-    );
+    this.logger.log(`Enhanced item → ${key} (${jpeg.byteLength} bytes)`);
     return url;
   }
 
@@ -377,9 +330,9 @@ export class ImageEnhancementService {
   }
 
   /**
-   * Re-encode a buffer to a print-ready JPEG (Motor B), applying the sharp
-   * adjustments. Caps resolution to the print size at PRINT_DPI (or MAX_EDGE
-   * when unknown, or `capEdge` for previews). Only ever shrinks.
+   * Re-encode a buffer to a print-ready JPEG, applying the sharp adjustments.
+   * Caps resolution to the print size at PRINT_DPI (or MAX_EDGE when unknown, or
+   * `capEdge` for previews). Only ever shrinks.
    */
   private async buildSharpJpeg(
     buffer: Buffer,
@@ -409,8 +362,8 @@ export class ImageEnhancementService {
 
     let pipe = sharp(buffer).resize(resizeOpts);
 
-    // Auto-levels approximates Cloudinary's improve / auto_color.
-    if (options.improve || options.autoColor) pipe = pipe.normalise();
+    // Auto-levels (improve) — normalise the tonal range.
+    if (options.improve) pipe = pipe.normalise();
 
     const brightness =
       options.brightness != null ? 1 + options.brightness / 100 : undefined;
@@ -490,54 +443,6 @@ export class ImageEnhancementService {
     if (sourceDpi >= TARGET_DPI) return 0;
     const factor = Math.ceil(TARGET_DPI / sourceDpi);
     return factor <= 1 ? 0 : factor <= 2 ? 2 : 4;
-  }
-
-  /** Build the Cloudinary transformation chain (Motor A) for the given options. */
-  private buildCloudinaryTransformation(
-    printInches: { width: number; height: number } | null,
-    options: EnhanceDto,
-    includeScale: boolean,
-  ): Record<string, string | number>[] {
-    const t: Record<string, string | number>[] = [];
-    if (includeScale && options.fitToFormat && printInches) {
-      // Crop to the exact print aspect ratio (centered) — Pictorem won't crop.
-      t.push({
-        width: Math.min(Math.round(printInches.width * PRINT_DPI), MAX_EDGE),
-        height: Math.min(Math.round(printInches.height * PRINT_DPI), MAX_EDGE),
-        crop: 'fill',
-        gravity: 'center',
-      });
-    } else if (includeScale && options.upscale && printInches) {
-      const width = Math.min(
-        Math.round(printInches.width * PRINT_DPI),
-        MAX_EDGE,
-      );
-      t.push({ width, crop: 'scale' });
-    }
-    if (options.improve) t.push({ effect: 'improve' });
-    if (options.autoColor) t.push({ effect: 'auto_color' });
-    if (options.contrast) t.push({ effect: `contrast:${options.contrast}` });
-    if (options.brightness)
-      t.push({ effect: `brightness:${options.brightness}` });
-    if (options.saturation)
-      t.push({ effect: `saturation:${options.saturation}` });
-    if (options.sharpen) t.push({ effect: `sharpen:${options.sharpen}` });
-    t.push({ fetch_format: 'jpg' });
-    t.push({ quality: 'auto:best' });
-    return t;
-  }
-
-  /** Build a Cloudinary delivery URL for an upload public_id or a remote fetch source. */
-  private cloudinaryUrl(
-    ref: CldRef,
-    transformation: Record<string, string | number>[],
-  ): string {
-    return cloudinary.url(ref.id, {
-      type: ref.type,
-      resource_type: 'image',
-      secure: true,
-      transformation,
-    });
   }
 
   private async recordEvent(

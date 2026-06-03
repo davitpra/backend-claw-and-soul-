@@ -1,35 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 /**
  * Options for the image-enhancement pipeline applied to an order item's print
- * image before POD submission.
- *
- * Two selectable engines:
- *  - `cloudinary`: enhancement via Cloudinary transformations (improve, auto_color, …)
- *    delivered over a stored upload asset.
- *  - `sharp`: real AI upscale via fal.ai + adjustments with sharp, stored as a flat JPEG.
+ * image before POD submission. The pipeline runs a real AI upscale via fal.ai
+ * (optional) plus adjustments with sharp, storing the result as a flat JPEG.
  */
 export class EnhanceDto {
-  @ApiProperty({
-    description: 'Enhancement engine',
-    enum: ['cloudinary', 'sharp'],
-    required: false,
-    default: 'sharp',
-  })
-  @IsOptional()
-  @IsString()
-  @IsIn(['cloudinary', 'sharp'])
-  engine?: 'cloudinary' | 'sharp';
-
   @ApiProperty({
     description: 'AI upscale factor (0 = no upscale, run fal.ai when 2 or 4)',
     enum: [0, 2, 4],
@@ -75,15 +52,7 @@ export class EnhanceDto {
   saturation?: number;
 
   @ApiProperty({
-    description: 'Apply Cloudinary auto-color balance (e_auto_color)',
-    required: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  autoColor?: boolean;
-
-  @ApiProperty({
-    description: 'Apply Cloudinary generative improve (e_improve)',
+    description: 'Apply auto-levels (normalise the tonal range)',
     required: false,
   })
   @IsOptional()

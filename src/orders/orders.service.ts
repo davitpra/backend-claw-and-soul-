@@ -633,10 +633,13 @@ export class OrdersService {
     });
     if (!item) throw new NotFoundException('Order item not found');
 
-    if (item.printImageStorageKey) {
-      await this.storageService
-        .delete(item.printImageStorageKey)
-        .catch(() => null);
+    // Clean up any previous print/source assets (distinct keys only).
+    const oldKeys = [
+      item.printImageStorageKey,
+      item.printSourceStorageKey,
+    ].filter((k): k is string => Boolean(k));
+    for (const oldKey of new Set(oldKeys)) {
+      await this.storageService.delete(oldKey).catch(() => null);
     }
 
     const key = `orders/${orderId}/items/${itemId}/print/${uuidv4()}`;
@@ -646,9 +649,17 @@ export class OrdersService {
       file.mimetype,
     );
 
+    // A manual upload is BOTH the print image (what POD ships) and the source art
+    // (the enhancement input). Storing it as the source keeps the original
+    // recoverable after an enhancement.
     await this.prisma.orderItem.update({
       where: { id: itemId },
-      data: { printImageUrl: url, printImageStorageKey: key },
+      data: {
+        printImageUrl: url,
+        printImageStorageKey: key,
+        printSourceUrl: url,
+        printSourceStorageKey: key,
+      },
     });
 
     await this.prisma.orderEvent.create({

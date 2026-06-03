@@ -16,11 +16,14 @@ import { PodProviderRegistry } from './pod/pod-provider.registry';
 import { POD_PROVIDERS } from './pod/pod-provider.tokens';
 import { ShopifyHmacGuard } from '../common/guards/shopify-hmac.guard';
 import { ShopifySyncModule } from '../shopify-sync/shopify-sync.module';
+import { GenerationsModule } from '../generations/generations.module';
+import { ImageEnhancementService } from './image-enhancement.service';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: ORDERS_QUEUE }),
     ShopifySyncModule,
+    GenerationsModule,
   ],
   controllers: [ShopifyOrdersWebhookController, AdminOrdersController],
   providers: [
@@ -39,6 +42,7 @@ import { ShopifySyncModule } from '../shopify-sync/shopify-sync.module';
     },
     PodProviderRegistry,
     ShopifyHmacGuard,
+    ImageEnhancementService,
   ],
   exports: [OrdersService, AdminOrdersService, PodService],
 })

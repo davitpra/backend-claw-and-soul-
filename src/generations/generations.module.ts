@@ -37,6 +37,6 @@ import { FalService } from './providers/fal/fal.service';
     OpenRouterPromptService,
     FalService,
   ],
-  exports: [GenerationsService],
+  exports: [GenerationsService, FalService],
 })
 export class GenerationsModule {}

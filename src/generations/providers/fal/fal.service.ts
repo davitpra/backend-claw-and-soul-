@@ -24,8 +24,10 @@ interface FalImage {
 
 interface FalResponse {
   requestId?: string;
-  data?: { images?: FalImage[] };
+  // Text-to-image models return `images[]`; upscaler/enhancer models return a single `image`.
+  data?: { images?: FalImage[]; image?: FalImage };
   images?: FalImage[];
+  image?: FalImage;
 }
 
 @Injectable()
@@ -54,7 +56,9 @@ export class FalService {
 
     const falResult = result as FalResponse;
     const requestId = falResult.requestId ?? 'unknown';
-    const images: FalImage[] = falResult.data?.images ?? falResult.images ?? [];
+    const single = falResult.data?.image ?? falResult.image;
+    const images: FalImage[] =
+      falResult.data?.images ?? falResult.images ?? (single ? [single] : []);
 
     if (!images.length) {
       throw new Error(`Fal.ai returned no images for requestId: ${requestId}`);

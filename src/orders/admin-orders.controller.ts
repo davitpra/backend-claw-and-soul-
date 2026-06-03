@@ -34,6 +34,8 @@ import { OrdersService } from './orders.service';
 import { OrdersSyncService } from './orders-sync.service';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
 import { PodService } from './pod/pod.service';
+import { ImageEnhancementService } from './image-enhancement.service';
+import { EnhanceDto } from './dto/enhance.dto';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
@@ -54,6 +56,7 @@ export class AdminOrdersController {
     private readonly ordersSyncService: OrdersSyncService,
     private readonly shopifyApiService: ShopifyApiService,
     private readonly podService: PodService,
+    private readonly imageEnhancementService: ImageEnhancementService,
     @InjectQueue(ORDERS_QUEUE) private readonly ordersQueue: Queue,
   ) {}
 
@@ -118,7 +121,9 @@ export class AdminOrdersController {
   }
 
   @Get('pod/catalog')
-  @ApiOperation({ summary: 'Get Pictorem product catalog (materials, types, sizes, options)' })
+  @ApiOperation({
+    summary: 'Get Pictorem product catalog (materials, types, sizes, options)',
+  })
   podCatalog() {
     return this.podService.getCatalog();
   }
@@ -321,6 +326,72 @@ export class AdminOrdersController {
       orderId,
       itemId,
       file,
+      user?.id,
+    );
+  }
+
+  @Get(':id/items/:itemId/enhance-info')
+  @ApiOperation({
+    summary:
+      'Print-readiness info (source, pixel dims, print size, DPI) for an item',
+  })
+  getEnhanceInfo(
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+  ) {
+    return this.imageEnhancementService.getEnhanceInfo(orderId, itemId);
+  }
+
+  @Post(':id/items/:itemId/enhance-preview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Build a non-committed preview URL for the requested adjustments',
+  })
+  enhancePreview(
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @Body() options: EnhanceDto,
+  ) {
+    return this.imageEnhancementService.previewEnhance(
+      orderId,
+      itemId,
+      options,
+    );
+  }
+
+  @Post(':id/items/:itemId/enhance')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Enhance/upscale the print image and persist it for POD submission',
+  })
+  enhance(
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @Body() options: EnhanceDto,
+    @CurrentUser() user?: { id: string },
+  ) {
+    return this.imageEnhancementService.applyEnhance(
+      orderId,
+      itemId,
+      options,
+      user?.id,
+    );
+  }
+
+  @Post(':id/items/:itemId/enhance/revert')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Revert to the original image (drop the enhanced print image)',
+  })
+  enhanceRevert(
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @CurrentUser() user?: { id: string },
+  ) {
+    return this.imageEnhancementService.revertEnhance(
+      orderId,
+      itemId,
       user?.id,
     );
   }

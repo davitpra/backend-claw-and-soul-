@@ -400,6 +400,10 @@ model OrderItem {
   imageUrl               String?   @map("image_url")
   printImageUrl          String?   @map("print_image_url")
   printImageStorageKey   String?   @map("print_image_storage_key")
+  // Admin-provided source art (manual upload) used as the enhancement input.
+  // Kept separate from printImageUrl so enhancing never destroys the original.
+  printSourceUrl         String?   @map("print_source_url")
+  printSourceStorageKey  String?   @map("print_source_storage_key")
   style                  String?
   size                   String?
   fulfillmentMethod      String    @default("in_house") @map("fulfillment_method") // in_house | pod

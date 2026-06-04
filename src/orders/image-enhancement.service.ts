@@ -68,6 +68,8 @@ export interface EnhanceInfo {
   bleedColor: string;
   recommendedUpscale: 0 | 2 | 4;
   alreadyEnhanced: boolean;
+  /** True when a raw AI-upscaled base exists — "Guardar" will re-apply adjustments from it. */
+  hasUpscaledBase: boolean;
 }
 
 @Injectable()
@@ -108,6 +110,7 @@ export class ImageEnhancementService {
       alreadyEnhanced:
         Boolean(item.printImageUrl) &&
         item.printImageUrl !== item.printSourceUrl,
+      hasUpscaledBase: Boolean(item.printUpscaledUrl),
     };
   }
 
@@ -165,9 +168,7 @@ export class ImageEnhancementService {
           },
         });
         bytes = result.imageBuffer;
-        this.logger.log(
-          `Preview upscale x${factor} (req ${result.requestId})`,
-        );
+        this.logger.log(`Preview upscale x${factor} (req ${result.requestId})`);
       } else {
         bytes = await this.download(original.url);
       }
@@ -187,16 +188,26 @@ export class ImageEnhancementService {
       options,
       capEdge,
     );
-    const mimeType =
-      options.format === 'png' ? 'image/png' : 'image/jpeg';
+    const mimeType = options.format === 'png' ? 'image/png' : 'image/jpeg';
     const previewUrl = `data:${mimeType};base64,${previewBuffer.toString('base64')}`;
     return { previewUrl, willUpscale };
   }
 
   /**
-   * Run the enhancement (fal.ai upscale + sharp adjustments + optional bleed)
-   * and persist the result as a freshly uploaded asset. Always sourced from the
-   * ORIGINAL image (never the prior printImageUrl) so re-running never compounds.
+   * Run the enhancement pipeline and persist the result.
+   *
+   * Two paths depending on whether `options.upscaleFactor` (or `upscale` /
+   * `targetDpi`) is set:
+   *
+   * • Upscale path — runs fal.ai, saves a raw high-res BASE (printUpscaledUrl)
+   *   so future "adjust-only" saves can re-apply colour/bleed without re-running
+   *   the AI. Then applies adjustments on top and saves the master.
+   *
+   * • Adjust-only path — partitions from the raw upscaled base when one exists,
+   *   otherwise from the original source. Never calls fal.ai.
+   *
+   * The original source art (printSourceUrl / generation / Shopify image) is
+   * NEVER deleted or overwritten.
    */
   async applyEnhance(
     orderId: string,
@@ -205,37 +216,134 @@ export class ImageEnhancementService {
     adminUserId?: string,
   ): Promise<{ printImageUrl: string }> {
     const item = await this.loadItem(orderId, itemId);
-    const original = this.resolveOriginal(item);
-    if (!original) {
-      throw new BadRequestException(
-        'Item has no source image — upload or link an image first',
-      );
-    }
-
     const printInches = this.resolvePrintInches(item);
     const ext = options.format === 'png' ? 'png' : 'jpg';
-    const key = `orders/${orderId}/items/${itemId}/print/${uuidv4()}.${ext}`;
+    const masterKey = `orders/${orderId}/items/${itemId}/print/${uuidv4()}.${ext}`;
 
-    const printImageUrl = await this.applySharp(
-      key,
-      original,
+    const wantsUpscale = Boolean(
+      options.upscaleFactor || options.upscale || options.targetDpi,
+    );
+    const mock = this.configService.get<boolean>('ai.mock');
+
+    let baseBytes: Buffer;
+    let newUpscaledUrl: string | null = null;
+    let newUpscaledKey: string | null = null;
+    let oldUpscaledKey: string | null = null;
+
+    if (wantsUpscale) {
+      // ── Upscale path ────────────────────────────────────────────────────
+      const original = this.resolveOriginal(item);
+      if (!original) {
+        throw new BadRequestException(
+          'Item has no source image — upload or link an image first',
+        );
+      }
+
+      const factor = await this.resolveUpscaleFactor(
+        options,
+        original,
+        printInches,
+      );
+
+      if (factor > 0 && !mock) {
+        const result = await this.falService.generate({
+          model: UPSCALE_MODEL,
+          prompt: '',
+          params: {
+            image_url: original.url,
+            upscale_mode: 'factor',
+            upscale_factor: factor,
+          },
+        });
+        baseBytes = result.imageBuffer;
+        this.logger.log(`Upscaled item x${factor} (req ${result.requestId})`);
+      } else {
+        if (factor > 0 && mock) {
+          this.logger.warn(
+            'MOCK_AI=true — skipping fal upscale, adjustments only',
+          );
+        }
+        baseBytes = await this.download(original.url);
+      }
+
+      // Save a clean, unadjusted base at print resolution (JPEG). Always JPEG —
+      // the raw upscale at print size can be tens of MB as PNG, exceeding the
+      // storage provider's per-file limit. JPEG keeps it bounded while staying a
+      // faithful high-res reference for later adjust-only saves.
+      const baseKey = `orders/${orderId}/items/${itemId}/print/base/${uuidv4()}.jpg`;
+      const baseBuffer = await this.buildPrintImage(baseBytes, printInches, {
+        format: 'jpeg',
+      });
+      newUpscaledUrl = await this.storageService.upload(
+        baseKey,
+        baseBuffer,
+        'image/jpeg',
+      );
+      newUpscaledKey = baseKey;
+      oldUpscaledKey = item.printUpscaledStorageKey ?? null;
+    } else {
+      // ── Adjust-only path ─────────────────────────────────────────────────
+      // Prefer the saved high-res base; fall back to original source.
+      if (item.printUpscaledUrl) {
+        baseBytes = await this.download(item.printUpscaledUrl);
+      } else {
+        const original = this.resolveOriginal(item);
+        if (!original) {
+          throw new BadRequestException(
+            'Item has no source image — upload or link an image first',
+          );
+        }
+        baseBytes = await this.download(original.url);
+      }
+    }
+
+    // Build the print master (colour/bleed adjustments applied on the base).
+    const outputBuffer = await this.buildPrintImage(
+      baseBytes,
       printInches,
       options,
     );
+    const contentType = options.format === 'png' ? 'image/png' : 'image/jpeg';
+    const printImageUrl = await this.storageService.upload(
+      masterKey,
+      outputBuffer,
+      contentType,
+    );
+    this.logger.log(
+      `Enhanced item → ${masterKey} (${outputBuffer.byteLength} bytes)`,
+    );
 
-    // Replace the previous enhanced asset, but NEVER delete the source art.
-    if (
-      item.printImageStorageKey &&
-      item.printImageStorageKey !== item.printSourceStorageKey
-    ) {
+    // Delete old master (never the source, never the upscaled base we just created).
+    const safeKeys = new Set(
+      [item.printSourceStorageKey, newUpscaledKey].filter(Boolean),
+    );
+    if (item.printImageStorageKey && !safeKeys.has(item.printImageStorageKey)) {
       await this.storageService
         .delete(item.printImageStorageKey)
         .catch(() => null);
     }
 
+    // Delete old upscaled base when we just created a new one.
+    if (
+      oldUpscaledKey &&
+      oldUpscaledKey !== item.printSourceStorageKey &&
+      oldUpscaledKey !== newUpscaledKey
+    ) {
+      await this.storageService.delete(oldUpscaledKey).catch(() => null);
+    }
+
+    const dbData: Record<string, unknown> = {
+      printImageUrl,
+      printImageStorageKey: masterKey,
+    };
+    if (newUpscaledKey !== null) {
+      dbData.printUpscaledUrl = newUpscaledUrl;
+      dbData.printUpscaledStorageKey = newUpscaledKey;
+    }
+
     await this.prisma.orderItem.update({
       where: { id: itemId },
-      data: { printImageUrl, printImageStorageKey: key },
+      data: dbData,
     });
 
     await this.recordEvent(
@@ -263,6 +371,7 @@ export class ImageEnhancementService {
   ): Promise<{ printImageUrl: string | null }> {
     const item = await this.loadItem(orderId, itemId);
 
+    // Delete print master (never the source).
     if (
       item.printImageStorageKey &&
       item.printImageStorageKey !== item.printSourceStorageKey
@@ -272,11 +381,23 @@ export class ImageEnhancementService {
         .catch(() => null);
     }
 
+    // Delete upscaled base (never the source).
+    if (
+      item.printUpscaledStorageKey &&
+      item.printUpscaledStorageKey !== item.printSourceStorageKey
+    ) {
+      await this.storageService
+        .delete(item.printUpscaledStorageKey)
+        .catch(() => null);
+    }
+
     await this.prisma.orderItem.update({
       where: { id: itemId },
       data: {
         printImageUrl: item.printSourceUrl,
         printImageStorageKey: item.printSourceStorageKey,
+        printUpscaledUrl: null,
+        printUpscaledStorageKey: null,
       },
     });
 
@@ -292,57 +413,6 @@ export class ImageEnhancementService {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
-
-  /** fal.ai upscale (optional) + sharp adjustments + bleed, stored as JPEG/PNG. */
-  private async applySharp(
-    key: string,
-    original: { url: string; storageKey: string | null },
-    printInches: { width: number; height: number } | null,
-    options: EnhanceDto,
-  ): Promise<string> {
-    const mock = this.configService.get<boolean>('ai.mock');
-
-    const factor = await this.resolveUpscaleFactor(
-      options,
-      original,
-      printInches,
-    );
-
-    let bytes: Buffer;
-    if (factor > 0 && !mock) {
-      const result = await this.falService.generate({
-        model: UPSCALE_MODEL,
-        prompt: '',
-        params: {
-          image_url: original.url,
-          upscale_mode: 'factor',
-          upscale_factor: factor,
-        },
-      });
-      bytes = result.imageBuffer;
-      this.logger.log(
-        `Upscaled item x${factor} (req ${result.requestId})`,
-      );
-    } else {
-      if (factor > 0 && mock) {
-        this.logger.warn(
-          'MOCK_AI=true — skipping fal upscale, adjustments only',
-        );
-      }
-      bytes = await this.download(original.url);
-    }
-
-    const outputBuffer = await this.buildPrintImage(
-      bytes,
-      printInches,
-      options,
-    );
-    const contentType =
-      options.format === 'png' ? 'image/png' : 'image/jpeg';
-    const url = await this.storageService.upload(key, outputBuffer, contentType);
-    this.logger.log(`Enhanced item → ${key} (${outputBuffer.byteLength} bytes)`);
-    return url;
-  }
 
   /**
    * Determine the fal.ai upscale factor.
@@ -431,18 +501,11 @@ export class ImageEnhancementService {
     options: EnhanceDto,
     capEdge?: number,
   ): Promise<Buffer> {
-    let effectiveDpi = options.targetDpi ?? PRINT_DPI;
-    // When an explicit upscaleFactor is used (no targetDpi), derive the effective
-    // DPI from the already-upscaled buffer so the resize cap matches the real
-    // resolution and doesn't shrink the image back down to PRINT_DPI.
-    if (!options.targetDpi && options.upscaleFactor && printInches && !capEdge) {
-      const meta = await sharp(buffer).metadata();
-      if (meta.width && meta.height) {
-        effectiveDpi = Math.floor(
-          Math.min(meta.width / printInches.width, meta.height / printInches.height),
-        );
-      }
-    }
+    // Cap output at PRINT_DPI (or targetDpi) at the print size. The AI upscale is
+    // sized to reach this DPI; capping here keeps both the stored base and the
+    // master within the storage provider's per-file size limit. `withoutEnlargement`
+    // leaves lower-res sources untouched (no fake upscaling).
+    const effectiveDpi = options.targetDpi ?? PRINT_DPI;
 
     let resizeOpts: sharp.ResizeOptions;
     if (options.fitToFormat && printInches && !capEdge) {
@@ -454,9 +517,7 @@ export class ImageEnhancementService {
     } else {
       const maxWidth =
         capEdge ??
-        (printInches
-          ? Math.round(printInches.width * effectiveDpi)
-          : MAX_EDGE);
+        (printInches ? Math.round(printInches.width * effectiveDpi) : MAX_EDGE);
       const maxHeight =
         capEdge ??
         (printInches
@@ -565,13 +626,22 @@ export class ImageEnhancementService {
     return (
       '#' +
       [r, g, b]
-        .map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
+        .map((v) =>
+          Math.max(0, Math.min(255, Math.round(v)))
+            .toString(16)
+            .padStart(2, '0'),
+        )
         .join('')
     );
   }
 
   /** Parse a #rrggbb hex string to an RGBA object (alpha=1 for solid fill). */
-  private hexToRgb(hex: string): { r: number; g: number; b: number; alpha: number } {
+  private hexToRgb(hex: string): {
+    r: number;
+    g: number;
+    b: number;
+    alpha: number;
+  } {
     const clean = hex.replace('#', '');
     return {
       r: parseInt(clean.slice(0, 2), 16),

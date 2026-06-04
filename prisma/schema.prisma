@@ -404,6 +404,10 @@ model OrderItem {
   // Kept separate from printImageUrl so enhancing never destroys the original.
   printSourceUrl         String?   @map("print_source_url")
   printSourceStorageKey  String?   @map("print_source_storage_key")
+  // Raw AI-upscaled base (no colour/bleed adjustments). Lets "Guardar" re-apply
+  // adjustments without re-running fal.ai and without resolution loss.
+  printUpscaledUrl        String?   @map("print_upscaled_url")
+  printUpscaledStorageKey String?   @map("print_upscaled_storage_key")
   style                  String?
   size                   String?
   fulfillmentMethod      String    @default("in_house") @map("fulfillment_method") // in_house | pod

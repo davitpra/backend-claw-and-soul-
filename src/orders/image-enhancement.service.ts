@@ -16,9 +16,9 @@ import { FalService } from '../generations/providers/fal/fal.service';
 import { EnhanceDto } from './dto/enhance.dto';
 
 /** Target print resolution (dots per inch) we aim for before POD submission. */
-const TARGET_DPI = 150;
+const TARGET_DPI = 300;
 
-/** Resolution we re-encode the upscaled master at (px per inch of print size). */
+/** Resolution we re-encode the print master at when no targetDpi is provided. */
 const PRINT_DPI = 300;
 
 /** Hard cap on the longest edge when the item has no known print size (px). */
@@ -28,7 +28,20 @@ const MAX_EDGE = 8000;
 const JPEG_QUALITY = 92;
 
 /** fal.ai upscaler model used for true enlargement. */
-const UPSCALE_MODEL = 'fal-ai/clarity-upscaler';
+const UPSCALE_MODEL = 'fal-ai/seedvr/upscale/image';
+
+/** Maximum upscale factor we expose (seedvr accepts 1–10). */
+const MAX_UPSCALE_FACTOR = 8;
+
+/** Bleed margin added on each side (millimetres). */
+const BLEED_MM = 3;
+
+/**
+ * Conservative output ceiling (~30 mebipixels, px / 1024²). seedvr can produce
+ * very large outputs, so we keep this safety cap so the OUTPUT stays bounded
+ * (output_px = source_px × factor²).
+ */
+const MAX_UPSCALE_OUTPUT_PX = 30 * 1024 * 1024;
 
 interface PodConfigShape {
   width?: number; // inches
@@ -51,6 +64,8 @@ export interface EnhanceInfo {
    * storage key would under-report. Measuring the delivered URL matches PrintProofModal.
    */
   printImageUrl: string | null;
+  /** Detected dominant colour of the source image border — used as bleed default. */
+  bleedColor: string;
   recommendedUpscale: 0 | 2 | 4;
   alreadyEnhanced: boolean;
 }
@@ -77,6 +92,9 @@ export class ImageEnhancementService {
       ? await this.probeDimensions(original.storageKey)
       : null;
     const sourceDpi = this.dpiFor(sourcePx, printInches);
+    const bleedColor = original
+      ? await this.detectBorderColor(original.url)
+      : '#ffffff';
 
     return {
       isPod: item.fulfillmentMethod === 'pod',
@@ -84,12 +102,9 @@ export class ImageEnhancementService {
       sourcePx,
       printInches,
       sourceDpi,
-      // The client measures this delivered URL to get the real print DPI (the same
-      // file PrintProofModal renders), so both modals always agree.
       printImageUrl: item.printImageUrl ?? null,
+      bleedColor,
       recommendedUpscale: this.recommendUpscale(sourceDpi),
-      // "Enhanced" = the print image differs from the source art (or is a stale
-      // value with no source) → revert is meaningful.
       alreadyEnhanced:
         Boolean(item.printImageUrl) &&
         item.printImageUrl !== item.printSourceUrl,
@@ -108,8 +123,9 @@ export class ImageEnhancementService {
   }
 
   /**
-   * Build a non-committed preview returned inline as a data URI. The AI upscale
-   * is NEVER run here — preview only reflects the colour/sharpness adjustments.
+   * Build a non-committed preview returned inline as a data URI.
+   * With previewUpscale=true the fal.ai upscale runs so the preview is fully
+   * accurate (slower). Without it only colour/sharpness adjustments apply.
    */
   async previewEnhance(
     orderId: string,
@@ -124,19 +140,63 @@ export class ImageEnhancementService {
       );
     }
 
-    const willUpscale = Boolean(options.upscale);
+    const printInches = this.resolvePrintInches(item);
+    const mock = this.configService.get<boolean>('ai.mock');
+    const willUpscale =
+      Boolean(options.previewUpscale) ||
+      Boolean(options.upscale) ||
+      Boolean(options.targetDpi);
 
-    // Render a small preview and return it inline as a data URI.
-    const bytes = await this.download(original.url);
-    const jpeg = await this.buildSharpJpeg(bytes, null, options, 900);
-    const previewUrl = `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+    let bytes: Buffer;
+    if (options.previewUpscale && !mock) {
+      const factor = await this.resolveUpscaleFactor(
+        options,
+        original,
+        printInches,
+      );
+      if (factor > 0) {
+        const result = await this.falService.generate({
+          model: UPSCALE_MODEL,
+          prompt: '',
+          params: {
+            image_url: original.url,
+            upscale_mode: 'factor',
+            upscale_factor: factor,
+          },
+        });
+        bytes = result.imageBuffer;
+        this.logger.log(
+          `Preview upscale x${factor} (req ${result.requestId})`,
+        );
+      } else {
+        bytes = await this.download(original.url);
+      }
+    } else {
+      if (options.previewUpscale && mock) {
+        this.logger.warn('MOCK_AI=true — skipping fal upscale in preview');
+      }
+      bytes = await this.download(original.url);
+    }
+
+    // Previews are capped at 900 px (1200 after an upscale preview).
+    // Bleed is intentionally skipped in previews — it is shown live via CSS.
+    const capEdge = options.previewUpscale ? 1200 : 900;
+    const previewBuffer = await this.buildPrintImage(
+      bytes,
+      printInches,
+      options,
+      capEdge,
+    );
+    const mimeType =
+      options.format === 'png' ? 'image/png' : 'image/jpeg';
+    const previewUrl = `data:${mimeType};base64,${previewBuffer.toString('base64')}`;
     return { previewUrl, willUpscale };
   }
 
   /**
-   * Run the enhancement (fal.ai upscale + sharp adjustments) and persist the
-   * result as a freshly uploaded asset. Always sourced from the ORIGINAL image
-   * (never the prior printImageUrl) so re-running never compounds or breaks.
+   * Run the enhancement (fal.ai upscale + sharp adjustments + optional bleed)
+   * and persist the result as a freshly uploaded asset. Always sourced from the
+   * ORIGINAL image (never the prior printImageUrl) so re-running never compounds.
    */
   async applyEnhance(
     orderId: string,
@@ -153,7 +213,8 @@ export class ImageEnhancementService {
     }
 
     const printInches = this.resolvePrintInches(item);
-    const key = `orders/${orderId}/items/${itemId}/print/${uuidv4()}`;
+    const ext = options.format === 'png' ? 'png' : 'jpg';
+    const key = `orders/${orderId}/items/${itemId}/print/${uuidv4()}.${ext}`;
 
     const printImageUrl = await this.applySharp(
       key,
@@ -162,8 +223,7 @@ export class ImageEnhancementService {
       options,
     );
 
-    // Replace the previous enhanced asset, but NEVER delete the source art
-    // (when printImage still points at the manual-upload source).
+    // Replace the previous enhanced asset, but NEVER delete the source art.
     if (
       item.printImageStorageKey &&
       item.printImageStorageKey !== item.printSourceStorageKey
@@ -192,46 +252,9 @@ export class ImageEnhancementService {
     return { printImageUrl };
   }
 
-  /** fal.ai upscale (optional) + sharp adjustments, stored as a flat JPEG. */
-  private async applySharp(
-    key: string,
-    original: { url: string; storageKey: string | null },
-    printInches: { width: number; height: number } | null,
-    options: EnhanceDto,
-  ): Promise<string> {
-    const mock = this.configService.get<boolean>('ai.mock');
-    let bytes: Buffer;
-    if (options.upscale && !mock) {
-      const result = await this.falService.generate({
-        model: UPSCALE_MODEL,
-        prompt: '',
-        // clarity-upscaler returns a lossless PNG (no output_format support); we
-        // re-encode to JPEG below to stay under Cloudinary's upload size limit.
-        params: { image_url: original.url, upscale_factor: options.upscale },
-      });
-      bytes = result.imageBuffer;
-      this.logger.log(
-        `Upscaled item x${options.upscale} (req ${result.requestId})`,
-      );
-    } else {
-      if (options.upscale && mock) {
-        this.logger.warn(
-          'MOCK_AI=true — skipping fal upscale, adjustments only',
-        );
-      }
-      bytes = await this.download(original.url);
-    }
-
-    const jpeg = await this.buildSharpJpeg(bytes, printInches, options);
-    const url = await this.storageService.upload(key, jpeg, 'image/jpeg');
-    this.logger.log(`Enhanced item → ${key} (${jpeg.byteLength} bytes)`);
-    return url;
-  }
-
   /**
    * Drop the enhanced print image. Restores the manual-upload source art when
-   * present (so POD still ships it); otherwise clears it to fall back to the
-   * generation/Shopify image.
+   * present; otherwise clears it to fall back to the generation/Shopify image.
    */
   async revertEnhance(
     orderId: string,
@@ -240,7 +263,6 @@ export class ImageEnhancementService {
   ): Promise<{ printImageUrl: string | null }> {
     const item = await this.loadItem(orderId, itemId);
 
-    // Delete the enhanced output asset, but keep the source art intact.
     if (
       item.printImageStorageKey &&
       item.printImageStorageKey !== item.printSourceStorageKey
@@ -269,7 +291,306 @@ export class ImageEnhancementService {
     return { printImageUrl: item.printSourceUrl };
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────
+  // ── Private helpers ───────────────────────────────────────────────────────
+
+  /** fal.ai upscale (optional) + sharp adjustments + bleed, stored as JPEG/PNG. */
+  private async applySharp(
+    key: string,
+    original: { url: string; storageKey: string | null },
+    printInches: { width: number; height: number } | null,
+    options: EnhanceDto,
+  ): Promise<string> {
+    const mock = this.configService.get<boolean>('ai.mock');
+
+    const factor = await this.resolveUpscaleFactor(
+      options,
+      original,
+      printInches,
+    );
+
+    let bytes: Buffer;
+    if (factor > 0 && !mock) {
+      const result = await this.falService.generate({
+        model: UPSCALE_MODEL,
+        prompt: '',
+        params: {
+          image_url: original.url,
+          upscale_mode: 'factor',
+          upscale_factor: factor,
+        },
+      });
+      bytes = result.imageBuffer;
+      this.logger.log(
+        `Upscaled item x${factor} (req ${result.requestId})`,
+      );
+    } else {
+      if (factor > 0 && mock) {
+        this.logger.warn(
+          'MOCK_AI=true — skipping fal upscale, adjustments only',
+        );
+      }
+      bytes = await this.download(original.url);
+    }
+
+    const outputBuffer = await this.buildPrintImage(
+      bytes,
+      printInches,
+      options,
+    );
+    const contentType =
+      options.format === 'png' ? 'image/png' : 'image/jpeg';
+    const url = await this.storageService.upload(key, outputBuffer, contentType);
+    this.logger.log(`Enhanced item → ${key} (${outputBuffer.byteLength} bytes)`);
+    return url;
+  }
+
+  /**
+   * Determine the fal.ai upscale factor.
+   * targetDpi takes priority over the legacy upscale field. The factor is capped
+   * both at MAX_UPSCALE_FACTOR× and at the 30 MP OUTPUT ceiling (output = source ×
+   * factor²); returns 0 when no upscale is needed or the source is already too large.
+   */
+  private async resolveUpscaleFactor(
+    options: EnhanceDto,
+    original: { url: string; storageKey: string | null },
+    printInches: { width: number; height: number } | null,
+  ): Promise<number> {
+    const sourcePx = await this.getSourcePixels(original);
+
+    // Desired factor before any safety cap.
+    let desired: number;
+    if (options.upscaleFactor) {
+      desired = options.upscaleFactor;
+    } else if (options.targetDpi) {
+      const sourceDpi = this.dpiFor(sourcePx, printInches);
+      desired =
+        sourceDpi === null || sourceDpi <= 0
+          ? 2 // unknown resolution — safe default
+          : Math.ceil(options.targetDpi / sourceDpi);
+    } else {
+      desired = options.upscale ?? 0;
+    }
+
+    if (desired <= 1) return 0;
+    desired = Math.min(desired, MAX_UPSCALE_FACTOR);
+
+    // Cap by fal.ai's output megapixel ceiling: output_px = source_px × factor².
+    if (sourcePx) {
+      const srcArea = sourcePx.width * sourcePx.height;
+      const maxFactor = Math.sqrt(MAX_UPSCALE_OUTPUT_PX / srcArea);
+      if (maxFactor < 1.1) {
+        this.logger.warn(
+          `Skipping upscale: source ${sourcePx.width}×${sourcePx.height} ` +
+            `too large for fal.ai (max factor ${maxFactor.toFixed(2)}).`,
+        );
+        return 0;
+      }
+      desired = Math.min(desired, maxFactor);
+    }
+
+    // seedvr accepts fractional factors — keep a clean float passed through as-is.
+    return Math.round(desired * 100) / 100;
+  }
+
+  /**
+   * Resolve the source pixel dimensions. Tries the Cloudinary probe first, then
+   * falls back to downloading + reading sharp metadata (works for any URL).
+   */
+  private async getSourcePixels(original: {
+    url: string;
+    storageKey: string | null;
+  }): Promise<{ width: number; height: number } | null> {
+    if (original.storageKey) {
+      const probed = await this.probeDimensions(original.storageKey);
+      if (probed) return probed;
+    }
+    try {
+      const bytes = await this.download(original.url);
+      const meta = await sharp(bytes).metadata();
+      if (meta.width && meta.height) {
+        return { width: meta.width, height: meta.height };
+      }
+    } catch (err) {
+      this.logger.warn(
+        `getSourcePixels download failed: ${(err as Error).message}`,
+      );
+    }
+    return null;
+  }
+
+  /**
+   * Re-encode a buffer to a print-ready image, applying the sharp adjustments.
+   * - Caps resolution to the print size at targetDpi/PRINT_DPI (or MAX_EDGE),
+   *   never enlarges.
+   * - Applies bleed extension unless `capEdge` is set (preview mode).
+   * - Outputs JPEG or PNG per options.format.
+   */
+  private async buildPrintImage(
+    buffer: Buffer,
+    printInches: { width: number; height: number } | null,
+    options: EnhanceDto,
+    capEdge?: number,
+  ): Promise<Buffer> {
+    let effectiveDpi = options.targetDpi ?? PRINT_DPI;
+    // When an explicit upscaleFactor is used (no targetDpi), derive the effective
+    // DPI from the already-upscaled buffer so the resize cap matches the real
+    // resolution and doesn't shrink the image back down to PRINT_DPI.
+    if (!options.targetDpi && options.upscaleFactor && printInches && !capEdge) {
+      const meta = await sharp(buffer).metadata();
+      if (meta.width && meta.height) {
+        effectiveDpi = Math.floor(
+          Math.min(meta.width / printInches.width, meta.height / printInches.height),
+        );
+      }
+    }
+
+    let resizeOpts: sharp.ResizeOptions;
+    if (options.fitToFormat && printInches && !capEdge) {
+      resizeOpts = await this.coverResizeToFormat(
+        buffer,
+        printInches,
+        effectiveDpi,
+      );
+    } else {
+      const maxWidth =
+        capEdge ??
+        (printInches
+          ? Math.round(printInches.width * effectiveDpi)
+          : MAX_EDGE);
+      const maxHeight =
+        capEdge ??
+        (printInches
+          ? Math.round(printInches.height * effectiveDpi)
+          : MAX_EDGE);
+      resizeOpts = {
+        width: maxWidth,
+        height: maxHeight,
+        fit: 'inside',
+        withoutEnlargement: true,
+      };
+    }
+
+    let pipe = sharp(buffer).resize(resizeOpts);
+
+    if (options.improve) pipe = pipe.normalise();
+
+    const brightness =
+      options.brightness != null ? 1 + options.brightness / 100 : undefined;
+    const saturation =
+      options.saturation != null ? 1 + options.saturation / 100 : undefined;
+    if (brightness != null || saturation != null) {
+      pipe = pipe.modulate({ brightness, saturation });
+    }
+
+    if (options.contrast) {
+      const a = 1 + options.contrast / 100;
+      pipe = pipe.linear(a, 128 * (1 - a)); // contrast around mid-grey
+    }
+
+    if (options.sharpen) {
+      pipe = pipe.sharpen({ sigma: 1 + options.sharpen / 100 });
+    }
+
+    // Bleed extension — only on actual saves, not on previews (capEdge is undefined).
+    if (options.bleed && printInches && !capEdge) {
+      const bleedPx = Math.round((BLEED_MM / 25.4) * effectiveDpi);
+      const bg = this.hexToRgb(options.bleedColor ?? '#ffffff');
+      pipe = pipe.extend({
+        top: bleedPx,
+        bottom: bleedPx,
+        left: bleedPx,
+        right: bleedPx,
+        background: bg,
+      });
+    }
+
+    if (options.format === 'png') {
+      return pipe.png().toBuffer();
+    }
+    return pipe.jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer();
+  }
+
+  /**
+   * Cover-crop options that match the print aspect ratio exactly, centered,
+   * sized to the given DPI but never enlarged beyond the source resolution.
+   */
+  private async coverResizeToFormat(
+    buffer: Buffer,
+    printInches: { width: number; height: number },
+    dpi = PRINT_DPI,
+  ): Promise<sharp.ResizeOptions> {
+    const targetW = Math.round(printInches.width * dpi);
+    const targetH = Math.round(printInches.height * dpi);
+
+    const meta = await sharp(buffer).metadata();
+    let width = targetW;
+    let height = targetH;
+    if (meta.width && meta.height) {
+      const factor = Math.min(1, meta.width / targetW, meta.height / targetH);
+      width = Math.max(1, Math.round(targetW * factor));
+      height = Math.max(1, Math.round(targetH * factor));
+    }
+
+    return { width, height, fit: 'cover', position: 'centre' };
+  }
+
+  /**
+   * Detect the dominant colour of the source image (proxy for background colour).
+   * Used as the default bleed fill. Falls back to #ffffff on any error.
+   */
+  private async detectBorderColor(url: string): Promise<string> {
+    try {
+      const bytes = await this.download(url);
+      const stats = await sharp(bytes)
+        .resize(64, 64, { fit: 'fill' })
+        .removeAlpha()
+        .toColorspace('srgb')
+        .stats();
+      // Use dominant colour when available (sharp ≥ 0.32), else fall back to mean.
+      const d = (stats as any).dominant as
+        | { r: number; g: number; b: number }
+        | undefined;
+      if (d) {
+        return this.rgbToHex(d.r, d.g, d.b);
+      }
+      const [r, g, b] = stats.channels.map((c) => Math.round(c.mean));
+      return this.rgbToHex(r, g, b);
+    } catch {
+      return '#ffffff';
+    }
+  }
+
+  /** Convert 0-255 RGB channels to a 6-digit hex colour string. */
+  private rgbToHex(r: number, g: number, b: number): string {
+    return (
+      '#' +
+      [r, g, b]
+        .map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
+        .join('')
+    );
+  }
+
+  /** Parse a #rrggbb hex string to an RGBA object (alpha=1 for solid fill). */
+  private hexToRgb(hex: string): { r: number; g: number; b: number; alpha: number } {
+    const clean = hex.replace('#', '');
+    return {
+      r: parseInt(clean.slice(0, 2), 16),
+      g: parseInt(clean.slice(2, 4), 16),
+      b: parseInt(clean.slice(4, 6), 16),
+      alpha: 1,
+    };
+  }
+
+  /** Download a remote image into a Buffer. */
+  private async download(url: string): Promise<Buffer> {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new BadRequestException(
+        `Failed to download source image (${res.status})`,
+      );
+    }
+    return Buffer.from(await res.arrayBuffer());
+  }
 
   private async loadItem(orderId: string, itemId: string) {
     const item = await this.prisma.orderItem.findFirst({
@@ -286,9 +607,7 @@ export class ImageEnhancementService {
   /**
    * Resolve the enhancement SOURCE (input) and its Cloudinary key when known.
    * Priority: admin-uploaded source art → AI generation result → Shopify image.
-   * NEVER the already-enhanced `printImageUrl` (which is the OUTPUT) — sourcing
-   * from it would compound transformations and lose the original. If none exist,
-   * the item simply has no enhanceable source.
+   * NEVER the already-enhanced `printImageUrl` (which is the OUTPUT).
    */
   private resolveOriginal(item: {
     imageUrl: string | null;
@@ -329,96 +648,6 @@ export class ImageEnhancementService {
     return null;
   }
 
-  /**
-   * Re-encode a buffer to a print-ready JPEG, applying the sharp adjustments.
-   * Caps resolution to the print size at PRINT_DPI (or MAX_EDGE when unknown, or
-   * `capEdge` for previews). Only ever shrinks.
-   */
-  private async buildSharpJpeg(
-    buffer: Buffer,
-    printInches: { width: number; height: number } | null,
-    options: EnhanceDto,
-    capEdge?: number,
-  ): Promise<Buffer> {
-    let resizeOpts: sharp.ResizeOptions;
-    if (options.fitToFormat && printInches && !capEdge) {
-      // Crop to the EXACT print aspect ratio (centered) so Pictorem never crops.
-      // Cap to the print size at PRINT_DPI without enlarging beyond the source.
-      resizeOpts = await this.coverResizeToFormat(buffer, printInches);
-    } else {
-      const maxWidth =
-        capEdge ??
-        (printInches ? Math.round(printInches.width * PRINT_DPI) : MAX_EDGE);
-      const maxHeight =
-        capEdge ??
-        (printInches ? Math.round(printInches.height * PRINT_DPI) : MAX_EDGE);
-      resizeOpts = {
-        width: maxWidth,
-        height: maxHeight,
-        fit: 'inside',
-        withoutEnlargement: true,
-      };
-    }
-
-    let pipe = sharp(buffer).resize(resizeOpts);
-
-    // Auto-levels (improve) — normalise the tonal range.
-    if (options.improve) pipe = pipe.normalise();
-
-    const brightness =
-      options.brightness != null ? 1 + options.brightness / 100 : undefined;
-    const saturation =
-      options.saturation != null ? 1 + options.saturation / 100 : undefined;
-    if (brightness != null || saturation != null) {
-      pipe = pipe.modulate({ brightness, saturation });
-    }
-
-    if (options.contrast) {
-      const a = 1 + options.contrast / 100;
-      pipe = pipe.linear(a, 128 * (1 - a)); // contrast around mid-grey
-    }
-
-    if (options.sharpen) {
-      pipe = pipe.sharpen({ sigma: 1 + options.sharpen / 100 });
-    }
-
-    return pipe.jpeg({ quality: JPEG_QUALITY, mozjpeg: true }).toBuffer();
-  }
-
-  /**
-   * Cover-crop options that match the print aspect ratio exactly, centered,
-   * sized to PRINT_DPI but never enlarged beyond the source resolution.
-   */
-  private async coverResizeToFormat(
-    buffer: Buffer,
-    printInches: { width: number; height: number },
-  ): Promise<sharp.ResizeOptions> {
-    const targetW = Math.round(printInches.width * PRINT_DPI);
-    const targetH = Math.round(printInches.height * PRINT_DPI);
-
-    const meta = await sharp(buffer).metadata();
-    let width = targetW;
-    let height = targetH;
-    if (meta.width && meta.height) {
-      const factor = Math.min(1, meta.width / targetW, meta.height / targetH);
-      width = Math.max(1, Math.round(targetW * factor));
-      height = Math.max(1, Math.round(targetH * factor));
-    }
-
-    return { width, height, fit: 'cover', position: 'centre' };
-  }
-
-  /** Download a remote image into a Buffer. */
-  private async download(url: string): Promise<Buffer> {
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new BadRequestException(
-        `Failed to download source image (${res.status})`,
-      );
-    }
-    return Buffer.from(await res.arrayBuffer());
-  }
-
   private async probeDimensions(
     publicId: string,
   ): Promise<{ width: number; height: number } | null> {
@@ -439,7 +668,7 @@ export class ImageEnhancementService {
   }
 
   private recommendUpscale(sourceDpi: number | null): 0 | 2 | 4 {
-    if (sourceDpi === null) return 2; // unknown resolution — suggest a safe upscale
+    if (sourceDpi === null) return 2;
     if (sourceDpi >= TARGET_DPI) return 0;
     const factor = Math.ceil(TARGET_DPI / sourceDpi);
     return factor <= 1 ? 0 : factor <= 2 ? 2 : 4;

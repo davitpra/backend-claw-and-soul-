@@ -322,6 +322,16 @@ export class AdminOrdersController {
     if (!file) throw new BadRequestException('No file provided');
     if (!file.mimetype.startsWith('image/'))
       throw new BadRequestException('File must be an image');
+    // Cloudinary (plan gratuito) rechaza imágenes de más de 10 MB. Validamos
+    // aquí para devolver un mensaje claro en vez de un 500 genérico.
+    const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    if (file.size > MAX_IMAGE_BYTES) {
+      const mb = (file.size / 1024 / 1024).toFixed(1);
+      throw new BadRequestException(
+        `La imagen pesa ${mb} MB y supera el máximo de 10 MB. ` +
+          `Súbela como JPEG o reduce su tamaño antes de reemplazarla.`,
+      );
+    }
     return this.ordersService.updateItemPrintImage(
       orderId,
       itemId,

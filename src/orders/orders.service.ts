@@ -633,21 +633,23 @@ export class OrdersService {
     });
     if (!item) throw new NotFoundException('Order item not found');
 
-    // Clean up any previous print/source assets (distinct keys only).
-    const oldKeys = [
-      item.printImageStorageKey,
-      item.printSourceStorageKey,
-    ].filter((k): k is string => Boolean(k));
-    for (const oldKey of new Set(oldKeys)) {
-      await this.storageService.delete(oldKey).catch(() => null);
-    }
-
+    // Subir PRIMERO. Si la subida falla (p. ej. archivo muy grande), la imagen
+    // anterior debe permanecer intacta, así que el borrado va después.
     const key = `orders/${orderId}/items/${itemId}/print/${uuidv4()}`;
     const url = await this.storageService.upload(
       key,
       file.buffer,
       file.mimetype,
     );
+
+    // Subida correcta: ahora limpiamos los assets previos (claves distintas).
+    const oldKeys = [
+      item.printImageStorageKey,
+      item.printSourceStorageKey,
+    ].filter((k): k is string => Boolean(k) && k !== key);
+    for (const oldKey of new Set(oldKeys)) {
+      await this.storageService.delete(oldKey).catch(() => null);
+    }
 
     // A manual upload is BOTH the print image (what POD ships) and the source art
     // (the enhancement input). Storing it as the source keeps the original

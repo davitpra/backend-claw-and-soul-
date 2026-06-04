@@ -367,6 +367,7 @@ model Order {
   shopifyCreatedAt  DateTime  @map("shopify_created_at")
   shopifyUpdatedAt  DateTime? @map("shopify_updated_at")
   cancelledAt       DateTime? @map("cancelled_at")
+  productionCost    Decimal?  @map("production_cost") @db.Decimal(10, 2)
   rawPayload        Json      @map("raw_payload")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")

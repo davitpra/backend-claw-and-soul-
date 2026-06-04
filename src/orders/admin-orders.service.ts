@@ -134,12 +134,25 @@ export class AdminOrdersService {
       shippingAmount: order.shippingAmount?.toNumber() ?? null,
       taxAmount: order.taxAmount?.toNumber() ?? null,
       totalAmount: order.totalAmount.toNumber(),
+      productionCost: order.productionCost?.toNumber() ?? null,
       items: order.items.map((item) => ({
         ...item,
         unitPrice: item.unitPrice.toNumber(),
         totalPrice: item.totalPrice.toNumber(),
       })),
     };
+  }
+
+  async updateProductionCost(
+    id: string,
+    value: number | null,
+  ): Promise<{ productionCost: number | null }> {
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: { productionCost: value ?? null },
+      select: { productionCost: true },
+    });
+    return { productionCost: updated.productionCost?.toNumber() ?? null };
   }
 
   async getStats(period: '7d' | '30d' | '90d' = '30d') {

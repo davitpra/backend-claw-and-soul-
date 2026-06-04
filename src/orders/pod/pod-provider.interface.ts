@@ -32,10 +32,27 @@ export interface PodStatusResult {
   rawResponse: unknown;
 }
 
+export interface PodPriceInput {
+  podConfig: PodConfig;
+  quantity: number;
+  aspectRatio?: string; // providers derive orientation from this when not in podConfig
+}
+
+export interface PodPriceResult {
+  list: number; // catalog list price (before reseller discount)
+  discount: number; // reseller discount amount
+  subtotal: number; // reseller cost before taxes (list - discount)
+  total: number; // total including provider taxes
+  currency: string; // provider currency (Pictorem has no field — defaults to USD)
+  preorderCode: string; // the code used to obtain the quote
+  rawResponse: unknown;
+}
+
 export interface PodProvider {
   readonly name: string;
   submitOrder(input: PodSubmitInput): Promise<PodSubmitResult>;
   getStatus(podOrderId: string, po?: string): Promise<PodStatusResult>;
+  getPrice(input: PodPriceInput): Promise<PodPriceResult>;
   cancel(podOrderId: string): Promise<void>;
   testConnection(): Promise<{ ok: boolean; apiUrl: string; message: string }>;
 }

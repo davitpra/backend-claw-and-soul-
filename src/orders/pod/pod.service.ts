@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PodProviderRegistry } from './pod-provider.registry';
 import { PICTOREM_CATALOG, PodCatalog } from './catalog/pictorem-catalog';
+import { FxRateService } from './fx-rate.service';
 
 const DEFAULT_POD_PROVIDER = 'pictorem';
 const POD_ENABLED_KEY = 'orders_pod_enabled';
@@ -16,7 +17,17 @@ export class PodService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly registry: PodProviderRegistry,
+    private readonly fx: FxRateService,
   ) {}
+
+  /**
+   * Currency in which the POD provider actually invoices (the account's billing
+   * currency). Pictorem's getprice returns USD, but invoices are issued in the
+   * account currency (CAD for our account), so we convert for display.
+   */
+  private billingCurrency(): string {
+    return this.configService.get<string>('PICTOREM_BILLING_CURRENCY') ?? 'CAD';
+  }
 
   private async isEnabled(): Promise<boolean> {
     const row = await this.prisma.appSetting.findUnique({
@@ -221,6 +232,194 @@ export class PodService {
       });
       // Re-throw so BullMQ can retry according to job options
       throw err;
+    }
+  }
+
+  /**
+   * Quote the POD provider's reseller price for an OrderItem without creating
+   * an order. Resolves the variant's podConfig the same way submitItem does.
+   */
+  async getItemPrice(orderItemId: string): Promise<{
+    list: number;
+    discount: number;
+    subtotal: number;
+    total: number;
+    currency: string;
+    preorderCode: string;
+    billing: {
+      currency: string;
+      subtotal: number;
+      total: number;
+      rate: number;
+      rateDate: string;
+    } | null;
+  }> {
+    const item = await this.prisma.orderItem.findUnique({
+      where: { id: orderItemId },
+      include: {
+        productVariant: {
+          include: { format: { select: { aspectRatio: true } } },
+        },
+      },
+    });
+
+    if (!item) {
+      throw new BadRequestException(`OrderItem ${orderItemId} no encontrado`);
+    }
+
+    const rawConfig = item.productVariant?.podConfig;
+    if (!rawConfig) {
+      throw new BadRequestException(
+        'Este item no tiene configuración POD; no se puede cotizar en el proveedor',
+      );
+    }
+
+    const variantPodProvider = (
+      item.productVariant as { podProvider?: string | null } | null
+    )?.podProvider;
+    const providerName = variantPodProvider ?? this.defaultProvider();
+    const provider = this.registry.get(providerName);
+
+    const price = await provider.getPrice({
+      podConfig: rawConfig as Record<string, unknown>,
+      quantity: item.quantity,
+      aspectRatio: item.productVariant?.format?.aspectRatio ?? undefined,
+    });
+
+    // The provider quotes in USD; convert to the account's billing currency
+    // (the currency Pictorem actually invoices in) using live FX rates.
+    const billingCurrency = this.billingCurrency();
+    const subtotalConv = await this.fx.convert(
+      price.subtotal,
+      price.currency,
+      billingCurrency,
+    );
+    const totalConv = await this.fx.convert(
+      price.total,
+      price.currency,
+      billingCurrency,
+    );
+
+    const billing =
+      subtotalConv && totalConv
+        ? {
+            currency: billingCurrency,
+            subtotal: subtotalConv.amount,
+            total: totalConv.amount,
+            rate: subtotalConv.rate,
+            rateDate: subtotalConv.rateDate,
+          }
+        : null;
+
+    return {
+      list: price.list,
+      discount: price.discount,
+      subtotal: price.subtotal,
+      total: price.total,
+      currency: price.currency,
+      preorderCode: price.preorderCode,
+      billing,
+    };
+  }
+
+  /**
+   * Estimate the total production cost for all POD items in an order by summing
+   * Pictorem's reseller price for each, then converting to the order's currency.
+   * Items without podConfig or that fail to quote are skipped (partial result).
+   */
+  async estimateOrderProductionCost(orderId: string): Promise<{
+    amount: number;
+    currency: string;
+    itemsPriced: number;
+    itemsTotal: number;
+    partial: boolean;
+    fxUnavailable: boolean;
+  }> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        currency: true,
+        items: {
+          where: { fulfillmentMethod: 'pod' },
+          include: {
+            productVariant: {
+              include: { format: { select: { aspectRatio: true } } },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) throw new BadRequestException(`Order ${orderId} no encontrada`);
+
+    const podItems = order.items;
+    let totalUsd = 0;
+    let itemsPriced = 0;
+
+    for (const item of podItems) {
+      const priceUsd = await this.quoteItemUsd(item);
+      if (priceUsd != null) {
+        totalUsd += priceUsd;
+        itemsPriced++;
+      }
+    }
+
+    const orderCurrency = order.currency.toUpperCase();
+    const PICTOREM_NATIVE = 'USD';
+    let fxUnavailable = false;
+    let amount = totalUsd;
+
+    if (orderCurrency !== PICTOREM_NATIVE) {
+      const conv = await this.fx.convert(
+        totalUsd,
+        PICTOREM_NATIVE,
+        orderCurrency,
+      );
+      if (conv) {
+        amount = conv.amount;
+      } else {
+        fxUnavailable = true;
+        // Fall back to USD value; caller surfaces the warning
+        amount = totalUsd;
+      }
+    }
+
+    return {
+      amount: Math.round(amount * 100) / 100,
+      currency: fxUnavailable ? PICTOREM_NATIVE : orderCurrency,
+      itemsPriced,
+      itemsTotal: podItems.length,
+      partial: itemsPriced < podItems.length,
+      fxUnavailable,
+    };
+  }
+
+  /** Quote a single item's total cost in USD from the POD provider; null if not quotable. */
+  private async quoteItemUsd(item: {
+    quantity: number;
+    podProvider?: string | null;
+    productVariant?: {
+      podConfig?: unknown;
+      podProvider?: string | null;
+      format?: { aspectRatio?: string | null } | null;
+    } | null;
+  }): Promise<number | null> {
+    const rawConfig = item.productVariant?.podConfig;
+    if (!rawConfig) return null;
+
+    const variantPodProvider = item.productVariant?.podProvider;
+    const providerName = variantPodProvider ?? this.defaultProvider();
+
+    try {
+      const provider = this.registry.get(providerName);
+      const price = await provider.getPrice({
+        podConfig: rawConfig as Record<string, unknown>,
+        quantity: item.quantity,
+        aspectRatio: item.productVariant?.format?.aspectRatio ?? undefined,
+      });
+      return price.total; // total includes provider taxes — the invoiced amount
+    } catch {
+      return null;
     }
   }
 

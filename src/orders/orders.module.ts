@@ -11,6 +11,7 @@ import { OrdersIngestProcessor } from './processors/orders-ingest.processor';
 import { PodProcessor } from './processors/pod.processor';
 import { PodService } from './pod/pod.service';
 import { PodSyncService } from './pod/pod-sync.service';
+import { FxRateService } from './pod/fx-rate.service';
 import { PictoremProvider } from './pod/providers/pictorem.provider';
 import { PodProviderRegistry } from './pod/pod-provider.registry';
 import { POD_PROVIDERS } from './pod/pod-provider.tokens';
@@ -34,6 +35,7 @@ import { ImageEnhancementService } from './image-enhancement.service';
     PodProcessor,
     PodService,
     PodSyncService,
+    FxRateService,
     PictoremProvider,
     {
       provide: POD_PROVIDERS,

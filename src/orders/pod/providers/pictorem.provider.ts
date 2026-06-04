@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  PodPriceInput,
+  PodPriceResult,
   PodProvider,
   PodStatusResult,
   PodSubmitInput,
@@ -64,18 +66,39 @@ interface PictoremValidateResponse {
   msg: Record<string, unknown> | [];
 }
 
+interface PictoremPriceResponse {
+  status: boolean;
+  msg: Record<string, unknown> | [];
+  pdpreordercode?: string;
+  worksheet?:
+    | {
+        price?: {
+          list?: { main?: number };
+          discount?: { main?: number };
+          subTotal?: number;
+          total?: number;
+        };
+      }
+    | [];
+}
+
 @Injectable()
 export class PictoremProvider implements PodProvider {
   readonly name = 'pictorem';
   private readonly logger = new Logger(PictoremProvider.name);
   private readonly apiKey: string;
   private readonly baseUrl: string;
+  private readonly currency: string;
 
   constructor(private readonly configService: ConfigService) {
     this.apiKey = this.configService.get<string>('PICTOREM_API_KEY') ?? '';
     this.baseUrl =
       this.configService.get<string>('PICTOREM_API_URL') ??
       'https://www.pictorem.com/artflow/0.1';
+    // Pictorem's getprice response carries no currency field; reseller pricing
+    // is quoted in USD by default. Override with PICTOREM_CURRENCY if needed.
+    this.currency =
+      this.configService.get<string>('PICTOREM_CURRENCY') ?? 'USD';
   }
 
   /** Build the pipe-delimited preordercode Pictorem expects. */
@@ -146,6 +169,46 @@ export class PictoremProvider implements PodProvider {
         `Invalid preordercode "${preorderCode}": ${errors}`,
       );
     }
+  }
+
+  /** Quote the reseller price for a podConfig (no order is created). */
+  async getPrice(input: PodPriceInput): Promise<PodPriceResult> {
+    const config = input.podConfig as unknown as PictoremPodConfig;
+    if (!config.orientation && input.aspectRatio) {
+      config.orientation = this.deriveOrientation(input.aspectRatio);
+    }
+    const preorderCode = this.buildPreorderCode(config, input.quantity);
+
+    const result = await this.post<PictoremPriceResponse>('getprice/', {
+      preordercode: preorderCode,
+    });
+
+    const price =
+      result.status && !Array.isArray(result.worksheet)
+        ? result.worksheet?.price
+        : undefined;
+
+    if (!result.status || !price) {
+      const errors = this.extractErrors(result.msg);
+      throw new ServiceUnavailableException(
+        `Pictorem getprice failed for "${preorderCode}": ${errors}`,
+      );
+    }
+
+    const list = price.list?.main ?? 0;
+    const discount = price.discount?.main ?? 0;
+    const subtotal = price.subTotal ?? list - discount;
+    const total = price.total ?? subtotal;
+
+    return {
+      list,
+      discount,
+      subtotal,
+      total,
+      currency: this.currency,
+      preorderCode,
+      rawResponse: result,
+    };
   }
 
   async submitOrder(input: PodSubmitInput): Promise<PodSubmitResult> {

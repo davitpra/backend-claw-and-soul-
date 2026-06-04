@@ -299,6 +299,35 @@ export class AdminOrdersController {
     return { ok: true, orderItemId: itemId };
   }
 
+  @Get(':id/items/:itemId/pod/price')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Quote the POD provider (Pictorem) reseller price for an item',
+  })
+  podPrice(@Param('itemId') itemId: string) {
+    return this.podService.getItemPrice(itemId);
+  }
+
+  @Get(':id/production-cost/estimate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Estimate total production cost from POD provider for all POD items in an order',
+  })
+  estimateProductionCost(@Param('id') id: string) {
+    return this.podService.estimateOrderProductionCost(id);
+  }
+
+  @Patch(':id/production-cost')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Save the production cost for an order' })
+  updateProductionCost(
+    @Param('id') id: string,
+    @Body('productionCost') value: number | null,
+  ) {
+    return this.adminOrdersService.updateProductionCost(id, value);
+  }
+
   @Post(':id/items/:itemId/print-image')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')

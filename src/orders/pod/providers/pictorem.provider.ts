@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  PodLeadTimeResult,
   PodPriceComponent,
   PodPriceInput,
   PodPriceResult,
@@ -86,6 +87,12 @@ interface PictoremPriceResponse {
         };
       }
     | [];
+}
+
+interface PictoremLeadTimeResponse {
+  status: boolean;
+  msg: Record<string, unknown> | [];
+  data?: { productionLeadTime?: number };
 }
 
 /** Humanized labels for Pictorem worksheet component keys. */
@@ -252,6 +259,36 @@ export class PictoremProvider implements PodProvider {
 
   private capitalize(s: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  async getLeadTime(input: PodPriceInput): Promise<PodLeadTimeResult> {
+    const config = input.podConfig as unknown as PictoremPodConfig;
+    if (!config.orientation && input.aspectRatio) {
+      config.orientation = this.deriveOrientation(input.aspectRatio);
+    }
+    const preorderCode = this.buildPreorderCode(config, input.quantity);
+
+    const result = await this.post<PictoremLeadTimeResponse>('getleadtime/', {
+      preordercode: preorderCode,
+    });
+
+    if (!result.status) {
+      const errors = this.extractErrors(result.msg);
+      throw new ServiceUnavailableException(
+        `Pictorem getleadtime failed for "${preorderCode}": ${errors}`,
+      );
+    }
+
+    const leadTime = result.data?.productionLeadTime ?? null;
+    const label = leadTime != null ? `${leadTime} días hábiles` : null;
+
+    return {
+      leadTime,
+      unit: 'business_days',
+      label,
+      preorderCode,
+      rawResponse: result,
+    };
   }
 
   async submitOrder(input: PodSubmitInput): Promise<PodSubmitResult> {

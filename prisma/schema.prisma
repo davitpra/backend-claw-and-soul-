@@ -419,6 +419,8 @@ model OrderItem {
   podProvider            String?   @map("pod_provider")
   podOrderId             String?   @map("pod_order_id")
   podRawResponse         Json?     @map("pod_raw_response")
+  podLeadTimeDays        Int?      @map("pod_lead_time_days")
+  podEstimatedReadyAt    DateTime? @map("pod_estimated_ready_at")
   notes                  String?
   shippedAt              DateTime? @map("shipped_at")
   deliveredAt            DateTime? @map("delivered_at")

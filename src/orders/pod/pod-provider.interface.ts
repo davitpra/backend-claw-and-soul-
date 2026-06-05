@@ -59,11 +59,20 @@ export interface PodPriceResult {
   rawResponse: unknown;
 }
 
+export interface PodLeadTimeResult {
+  leadTime: number | null; // days (numeric) if the provider returns it
+  unit: string; // e.g. "business_days" | "days" (best-effort)
+  label: string | null; // raw text label from the provider, if any
+  preorderCode: string;
+  rawResponse: unknown;
+}
+
 export interface PodProvider {
   readonly name: string;
   submitOrder(input: PodSubmitInput): Promise<PodSubmitResult>;
   getStatus(podOrderId: string, po?: string): Promise<PodStatusResult>;
   getPrice(input: PodPriceInput): Promise<PodPriceResult>;
+  getLeadTime(input: PodPriceInput): Promise<PodLeadTimeResult>;
   cancel(podOrderId: string): Promise<void>;
   testConnection(): Promise<{ ok: boolean; apiUrl: string; message: string }>;
 }

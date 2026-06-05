@@ -308,6 +308,15 @@ export class AdminOrdersController {
     return this.podService.getItemPrice(itemId);
   }
 
+  @Get(':id/items/:itemId/pod/leadtime')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Consultar el lead time de producción (Pictorem) de un item',
+  })
+  podLeadTime(@Param('itemId') itemId: string) {
+    return this.podService.getItemLeadTime(itemId);
+  }
+
   @Get(':id/production-cost/estimate')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

@@ -334,6 +334,78 @@ export class PodService {
     };
   }
 
+  async getItemLeadTime(orderItemId: string): Promise<{
+    leadTime: number | null;
+    unit: string;
+    label: string | null;
+    preorderCode: string;
+    estimatedReadyAt: string | null;
+  }> {
+    const item = await this.prisma.orderItem.findUnique({
+      where: { id: orderItemId },
+      include: {
+        productVariant: {
+          include: { format: { select: { aspectRatio: true } } },
+        },
+      },
+    });
+
+    if (!item) {
+      throw new BadRequestException(`OrderItem ${orderItemId} no encontrado`);
+    }
+
+    const rawConfig = item.productVariant?.podConfig;
+    if (!rawConfig) {
+      throw new BadRequestException(
+        'Este item no tiene configuración POD; no se puede consultar el lead time',
+      );
+    }
+
+    const variantPodProvider = (
+      item.productVariant as { podProvider?: string | null } | null
+    )?.podProvider;
+    const providerName = variantPodProvider ?? this.defaultProvider();
+    const provider = this.registry.get(providerName);
+
+    const result = await provider.getLeadTime({
+      podConfig: rawConfig as Record<string, unknown>,
+      quantity: item.quantity,
+      aspectRatio: item.productVariant?.format?.aspectRatio ?? undefined,
+    });
+
+    const estimatedReadyAt =
+      result.leadTime != null
+        ? this.addBusinessDays(new Date(), result.leadTime)
+        : null;
+
+    await this.prisma.orderItem.update({
+      where: { id: orderItemId },
+      data: {
+        podLeadTimeDays: result.leadTime,
+        podEstimatedReadyAt: estimatedReadyAt,
+      },
+    });
+
+    return {
+      leadTime: result.leadTime,
+      unit: result.unit,
+      label: result.label,
+      preorderCode: result.preorderCode,
+      estimatedReadyAt: estimatedReadyAt?.toISOString() ?? null,
+    };
+  }
+
+  private addBusinessDays(start: Date, days: number): Date {
+    const result = new Date(start);
+    let added = 0;
+    while (added < days) {
+      result.setDate(result.getDate() + 1);
+      const dow = result.getDay();
+      if (dow !== 0 && dow !== 6) added++;
+    }
+    return result;
+  }
+
   /**
    * Estimate the total production cost for all POD items in an order by summing
    * Pictorem's reseller price for each, then converting to the order's currency.

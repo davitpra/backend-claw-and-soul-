@@ -11,7 +11,6 @@ import { OrdersIngestProcessor } from './processors/orders-ingest.processor';
 import { PodProcessor } from './processors/pod.processor';
 import { PodService } from './pod/pod.service';
 import { PodSyncService } from './pod/pod-sync.service';
-import { FxRateService } from './pod/fx-rate.service';
 import { PictoremProvider } from './pod/providers/pictorem.provider';
 import { PodProviderRegistry } from './pod/pod-provider.registry';
 import { POD_PROVIDERS } from './pod/pod-provider.tokens';
@@ -19,12 +18,16 @@ import { ShopifyHmacGuard } from '../common/guards/shopify-hmac.guard';
 import { ShopifySyncModule } from '../shopify-sync/shopify-sync.module';
 import { GenerationsModule } from '../generations/generations.module';
 import { ImageEnhancementService } from './image-enhancement.service';
+import { ExpensesModule } from '../expenses/expenses.module';
+import { FxModule } from '../fx/fx.module';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: ORDERS_QUEUE }),
     ShopifySyncModule,
     GenerationsModule,
+    ExpensesModule,
+    FxModule,
   ],
   controllers: [ShopifyOrdersWebhookController, AdminOrdersController],
   providers: [
@@ -35,7 +38,6 @@ import { ImageEnhancementService } from './image-enhancement.service';
     PodProcessor,
     PodService,
     PodSyncService,
-    FxRateService,
     PictoremProvider,
     {
       provide: POD_PROVIDERS,

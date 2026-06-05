@@ -145,6 +145,24 @@ export class AdminOrdersController {
     return await this.podService.setPodEnabled(enabled, user?.id);
   }
 
+  @Get('pod/fx-rate')
+  @ApiOperation({ summary: 'Get the fixed Pictorem USD→CAD invoicing rate' })
+  async podFxRateGet() {
+    return await this.podService.getPodFxRate();
+  }
+
+  @Patch('pod/fx-rate')
+  @ApiOperation({
+    summary:
+      'Set the fixed Pictorem USD→CAD invoicing rate (recalibrate from a real invoice)',
+  })
+  async podFxRatePatch(
+    @Body('rate') rate: number,
+    @CurrentUser() user?: { id: string },
+  ) {
+    return await this.podService.setPodFxRate(rate, user?.id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get order detail' })
   @ApiResponse({ status: 404, description: 'Order not found' })

@@ -29,6 +29,7 @@ import { AdminModule } from './admin/admin.module';
 import { OrdersModule } from './orders/orders.module';
 import { VisionConfigsModule } from './vision-configs/vision-configs.module';
 import { ImageGenConfigsModule } from './image-gen-configs/image-gen-configs.module';
+import { ExpensesModule } from './expenses/expenses.module';
 
 // Guards
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -77,6 +78,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     OrdersModule,
     VisionConfigsModule,
     ImageGenConfigsModule,
+    ExpensesModule,
   ],
   providers: [
     {

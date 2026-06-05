@@ -4,10 +4,21 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PodProviderRegistry } from './pod-provider.registry';
 import { PICTOREM_CATALOG, PodCatalog } from './catalog/pictorem-catalog';
-import { FxRateService } from './fx-rate.service';
+import { FxRateService } from '../../fx/fx-rate.service';
 
 const DEFAULT_POD_PROVIDER = 'pictorem';
 const POD_ENABLED_KEY = 'orders_pod_enabled';
+const POD_FX_RATE_KEY = 'pictorem_fx_rate';
+
+/**
+ * Pictorem invoices its reseller account in CAD at a near-fixed internal rate
+ * (measured ≈1.3589 across all invoice lines), while getprice quotes in USD.
+ * Using the daily ECB/Frankfurter rate over-states the cost by ~2%, so we
+ * convert Pictorem prices with this fixed rate instead. Recalibrate from any
+ * real invoice: rate = invoiceTotalCad / getpriceTotalUsd. Admin-editable via
+ * AppSetting (no redeploy) or PICTOREM_USD_CAD_RATE env.
+ */
+const DEFAULT_PICTOREM_USD_CAD_RATE = 1.3589;
 
 @Injectable()
 export class PodService {
@@ -27,6 +38,76 @@ export class PodService {
    */
   private billingCurrency(): string {
     return this.configService.get<string>('PICTOREM_BILLING_CURRENCY') ?? 'CAD';
+  }
+
+  /**
+   * Pictorem's fixed USD→billing-currency invoicing rate. Resolved from
+   * AppSetting (admin-editable) → env → built-in default.
+   */
+  private async pictoremFxRate(): Promise<number> {
+    const row = await this.prisma.appSetting.findUnique({
+      where: { key: POD_FX_RATE_KEY },
+    });
+    if (row) {
+      const n = Number(row.value);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    const env = this.configService.get<string>('PICTOREM_USD_CAD_RATE');
+    if (env) {
+      const n = Number(env);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return DEFAULT_PICTOREM_USD_CAD_RATE;
+  }
+
+  /**
+   * Convert a USD amount from Pictorem into the target currency. Uses Pictorem's
+   * fixed invoicing rate for USD→billing-currency (matches the real invoice);
+   * falls back to live FX for any other pair. Returns null when no conversion is
+   * needed (same currency) or FX is unavailable.
+   */
+  private async convertFromUsd(
+    amountUsd: number,
+    toCurrency: string,
+  ): Promise<{ amount: number; rate: number; rateDate: string } | null> {
+    const to = toCurrency.toUpperCase();
+    if (to === 'USD') return null;
+    if (to === this.billingCurrency().toUpperCase()) {
+      const rate = await this.pictoremFxRate();
+      return { amount: amountUsd * rate, rate, rateDate: 'pictorem-fixed' };
+    }
+    return this.fx.convert(amountUsd, 'USD', to);
+  }
+
+  async getPodFxRate(): Promise<{
+    rate: number;
+    source: 'db' | 'env' | 'default';
+  }> {
+    const row = await this.prisma.appSetting.findUnique({
+      where: { key: POD_FX_RATE_KEY },
+    });
+    if (row) {
+      const n = Number(row.value);
+      if (Number.isFinite(n) && n > 0) return { rate: n, source: 'db' };
+    }
+    const env = this.configService.get<string>('PICTOREM_USD_CAD_RATE');
+    if (env) {
+      const n = Number(env);
+      if (Number.isFinite(n) && n > 0) return { rate: n, source: 'env' };
+    }
+    return { rate: DEFAULT_PICTOREM_USD_CAD_RATE, source: 'default' };
+  }
+
+  async setPodFxRate(rate: number, userId?: string): Promise<{ rate: number }> {
+    if (!Number.isFinite(rate) || rate <= 0) {
+      throw new BadRequestException('La tasa debe ser un número positivo');
+    }
+    await this.prisma.appSetting.upsert({
+      where: { key: POD_FX_RATE_KEY },
+      create: { key: POD_FX_RATE_KEY, value: String(rate), updatedBy: userId },
+      update: { value: String(rate), updatedBy: userId },
+    });
+    return { rate };
   }
 
   private async isEnabled(): Promise<boolean> {
@@ -296,18 +377,14 @@ export class PodService {
     });
 
     // The provider quotes in USD; convert to the account's billing currency
-    // (the currency Pictorem actually invoices in) using live FX rates.
+    // (the currency Pictorem actually invoices in) using Pictorem's fixed
+    // invoicing rate so the figure matches the real invoice.
     const billingCurrency = this.billingCurrency();
-    const subtotalConv = await this.fx.convert(
+    const subtotalConv = await this.convertFromUsd(
       price.subtotal,
-      price.currency,
       billingCurrency,
     );
-    const totalConv = await this.fx.convert(
-      price.total,
-      price.currency,
-      billingCurrency,
-    );
+    const totalConv = await this.convertFromUsd(price.total, billingCurrency);
 
     const billing =
       subtotalConv && totalConv
@@ -454,11 +531,7 @@ export class PodService {
     let amount = totalUsd;
 
     if (orderCurrency !== PICTOREM_NATIVE) {
-      const conv = await this.fx.convert(
-        totalUsd,
-        PICTOREM_NATIVE,
-        orderCurrency,
-      );
+      const conv = await this.convertFromUsd(totalUsd, orderCurrency);
       if (conv) {
         amount = conv.amount;
       } else {

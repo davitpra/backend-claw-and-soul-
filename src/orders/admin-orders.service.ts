@@ -1,13 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   getPaginationParams,
   createPaginatedResult,
 } from '../common/utils/pagination.util';
+import { ExpensesService } from '../expenses/expenses.service';
 
 @Injectable()
 export class AdminOrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AdminOrdersService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly expensesService: ExpensesService,
+  ) {}
 
   async listOrders(
     page = 1,
@@ -128,6 +134,21 @@ export class AdminOrdersService {
 
     if (!order) return null;
 
+    if (order.productionCost !== null) {
+      this.expensesService
+        .recordProductionCost({
+          orderId: order.id,
+          userId: order.userId ?? undefined,
+          amount: order.productionCost.toNumber(),
+          currency: order.currency,
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `Auto-seed production cost expense for order ${id}: ${(err as Error).message}`,
+          );
+        });
+    }
+
     return {
       ...order,
       subtotalAmount: order.subtotalAmount.toNumber(),
@@ -147,12 +168,28 @@ export class AdminOrdersService {
     id: string,
     value: number | null,
   ): Promise<{ productionCost: number | null }> {
-    const updated = await this.prisma.order.update({
+    const order = await this.prisma.order.update({
       where: { id },
       data: { productionCost: value ?? null },
-      select: { productionCost: true },
+      select: { productionCost: true, userId: true, currency: true },
     });
-    return { productionCost: updated.productionCost?.toNumber() ?? null };
+
+    if (value !== null) {
+      this.expensesService
+        .recordProductionCost({
+          orderId: id,
+          userId: order.userId ?? undefined,
+          amount: value,
+          currency: order.currency,
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `Failed to record production cost for order ${id}: ${(err as Error).message}`,
+          );
+        });
+    }
+
+    return { productionCost: order.productionCost?.toNumber() ?? null };
   }
 
   async getStats(period: '7d' | '30d' | '90d' = '30d') {

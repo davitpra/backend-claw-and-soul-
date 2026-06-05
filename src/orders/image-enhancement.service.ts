@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { FalService } from '../generations/providers/fal/fal.service';
 import { EnhanceDto } from './dto/enhance.dto';
+import { ExpensesService } from '../expenses/expenses.service';
 
 /** Target print resolution (dots per inch) we aim for before POD submission. */
 const TARGET_DPI = 300;
@@ -81,6 +82,7 @@ export class ImageEnhancementService {
     private readonly storageService: StorageService,
     private readonly falService: FalService,
     private readonly configService: ConfigService,
+    private readonly expensesService: ExpensesService,
   ) {}
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -246,6 +248,7 @@ export class ImageEnhancementService {
       );
 
       if (factor > 0 && !mock) {
+        const sourcePx = await this.getSourcePixels(original);
         const result = await this.falService.generate({
           model: UPSCALE_MODEL,
           prompt: '',
@@ -257,6 +260,32 @@ export class ImageEnhancementService {
         });
         baseBytes = result.imageBuffer;
         this.logger.log(`Upscaled item x${factor} (req ${result.requestId})`);
+
+        const loadedItem = item as typeof item & {
+          orderId: string;
+          generationId: string | null;
+          order?: { userId?: string | null };
+        };
+        const orderWithUser = await this.prisma.order.findUnique({
+          where: { id: orderId },
+          select: { userId: true },
+        });
+        this.expensesService
+          .recordUpscaleCost({
+            orderId,
+            orderItemId: itemId,
+            userId: orderWithUser?.userId ?? undefined,
+            generationId: loadedItem.generationId ?? undefined,
+            model: UPSCALE_MODEL,
+            factor,
+            sourcePx,
+            requestId: result.requestId,
+          })
+          .catch((err) => {
+            this.logger.warn(
+              `Failed to record upscale cost for item ${itemId}: ${(err as Error).message}`,
+            );
+          });
       } else {
         if (factor > 0 && mock) {
           this.logger.warn(

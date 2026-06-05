@@ -16,6 +16,7 @@ import {
   createPaginatedResult,
 } from '../common/utils/pagination.util';
 import { QUEUE_NAMES, JOB_NAMES } from './constants/queues.constants';
+import { ExpensesService } from '../expenses/expenses.service';
 
 @Injectable()
 export class GenerationsService {
@@ -25,6 +26,7 @@ export class GenerationsService {
     private prisma: PrismaService,
     private petsService: PetsService,
     @InjectQueue(QUEUE_NAMES.IMAGE_GENERATION) private imageQueue: Queue,
+    private expensesService: ExpensesService,
   ) {}
 
   async createImageGeneration(
@@ -282,7 +284,7 @@ export class GenerationsService {
       promptSnapshot?: Record<string, any>;
     },
   ) {
-    return this.prisma.generation.update({
+    const updated = await this.prisma.generation.update({
       where: { id: generationId },
       data: {
         status: 'completed',
@@ -296,6 +298,14 @@ export class GenerationsService {
         promptSnapshot: data.promptSnapshot ?? undefined,
       },
     });
+
+    this.expensesService.recordGenerationCost(generationId).catch((err) => {
+      this.logger.warn(
+        `Failed to record generation cost for ${generationId}: ${(err as Error).message}`,
+      );
+    });
+
+    return updated;
   }
 
   private validateUserSelections(

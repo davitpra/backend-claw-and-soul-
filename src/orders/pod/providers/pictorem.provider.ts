@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  PodPriceComponent,
   PodPriceInput,
   PodPriceResult,
   PodProvider,
@@ -73,14 +74,30 @@ interface PictoremPriceResponse {
   worksheet?:
     | {
         price?: {
-          list?: { main?: number };
-          discount?: { main?: number };
+          list?: Record<string, number>;
+          discount?: Record<string, number>;
           subTotal?: number;
           total?: number;
+          taxes?: {
+            taxPercentage?: number;
+            taxGST?: number;
+            taxPST?: number;
+          };
         };
       }
     | [];
 }
+
+/** Humanized labels for Pictorem worksheet component keys. */
+const PICTOREM_COMPONENT_LABELS: Record<string, string> = {
+  main: 'Impresión',
+  frame: 'Marco',
+  plexiglass: 'Plexiglass',
+  plexiglas: 'Plexiglass',
+  float: 'Marco flotante',
+  floating: 'Marco flotante',
+  wrap: 'Wrap',
+};
 
 @Injectable()
 export class PictoremProvider implements PodProvider {
@@ -195,20 +212,46 @@ export class PictoremProvider implements PodProvider {
       );
     }
 
-    const list = price.list?.main ?? 0;
-    const discount = price.discount?.main ?? 0;
+    // Build the per-line invoice breakdown from the worksheet. Pictorem keys
+    // each priced component (main, frame, plexiglass, …) under list/discount.
+    const listObj = price.list ?? {};
+    const discountObj = price.discount ?? {};
+    const components: PodPriceComponent[] = Object.keys(listObj).map((code) => {
+      const lineList = Number(listObj[code]) || 0;
+      const lineDiscount = Number(discountObj[code]) || 0;
+      return {
+        code,
+        label: PICTOREM_COMPONENT_LABELS[code] ?? this.capitalize(code),
+        list: lineList,
+        discount: lineDiscount,
+        net: lineList - lineDiscount,
+      };
+    });
+
+    const list = components.reduce((sum, c) => sum + c.list, 0);
+    const discount = components.reduce((sum, c) => sum + c.discount, 0);
     const subtotal = price.subTotal ?? list - discount;
-    const total = price.total ?? subtotal;
+    const taxPercentage = Number(price.taxes?.taxPercentage) || 0;
+    const taxAmount =
+      (Number(price.taxes?.taxGST) || 0) + (Number(price.taxes?.taxPST) || 0);
+    const total = price.total ?? subtotal + taxAmount;
 
     return {
       list,
       discount,
       subtotal,
+      taxPercentage,
+      taxAmount,
       total,
       currency: this.currency,
       preorderCode,
+      components,
       rawResponse: result,
     };
+  }
+
+  private capitalize(s: string): string {
+    return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
   async submitOrder(input: PodSubmitInput): Promise<PodSubmitResult> {

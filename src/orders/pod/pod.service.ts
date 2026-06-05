@@ -243,9 +243,18 @@ export class PodService {
     list: number;
     discount: number;
     subtotal: number;
+    taxPercentage: number;
+    taxAmount: number;
     total: number;
     currency: string;
     preorderCode: string;
+    components: Array<{
+      code: string;
+      label: string;
+      list: number;
+      discount: number;
+      net: number;
+    }>;
     billing: {
       currency: string;
       subtotal: number;
@@ -315,9 +324,12 @@ export class PodService {
       list: price.list,
       discount: price.discount,
       subtotal: price.subtotal,
+      taxPercentage: price.taxPercentage,
+      taxAmount: price.taxAmount,
       total: price.total,
       currency: price.currency,
       preorderCode: price.preorderCode,
+      components: price.components,
       billing,
     };
   }

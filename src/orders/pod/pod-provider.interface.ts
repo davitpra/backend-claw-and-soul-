@@ -38,13 +38,24 @@ export interface PodPriceInput {
   aspectRatio?: string; // providers derive orientation from this when not in podConfig
 }
 
+export interface PodPriceComponent {
+  code: string; // raw worksheet key: 'main' | 'frame' | 'plexiglass' | ...
+  label: string; // humanized label for display
+  list: number; // gross list price for this line
+  discount: number; // discount amount applied to this line
+  net: number; // list - discount
+}
+
 export interface PodPriceResult {
-  list: number; // catalog list price (before reseller discount)
-  discount: number; // reseller discount amount
+  list: number; // total catalog list price (sum of all components, before discount)
+  discount: number; // total reseller discount amount
   subtotal: number; // reseller cost before taxes (list - discount)
+  taxPercentage: number; // provider tax rate (e.g. 0.13 for 13% HST)
+  taxAmount: number; // provider taxes (GST + PST)
   total: number; // total including provider taxes
   currency: string; // provider currency (Pictorem has no field — defaults to USD)
   preorderCode: string; // the code used to obtain the quote
+  components: PodPriceComponent[]; // per-line invoice breakdown
   rawResponse: unknown;
 }
 

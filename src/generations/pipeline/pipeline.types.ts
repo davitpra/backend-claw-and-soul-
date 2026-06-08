@@ -24,6 +24,7 @@ export interface PipelineContext {
     [key: string]: unknown;
   };
   userSelections?: Record<string, string | number>;
+  subjectPhotoUrls?: string[];
 }
 
 export interface PipelineResult {

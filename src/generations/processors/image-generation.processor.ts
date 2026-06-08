@@ -28,7 +28,7 @@ interface GenerationWithRelations {
   prompt: string | null;
   metadata: AdminTestMetadata | null;
   style: StyleWithConfigs;
-  pet: Pet | null;
+  pet: (Pet & { photos: PetPhoto[] }) | null;
   petPhoto: PetPhoto | null;
   format: Format | null;
 }
@@ -79,6 +79,12 @@ export class ImageGenerationProcessor extends WorkerHost {
         breed: metadata?.petContext?.petBreed ?? null,
       };
 
+      const petPhotos = generation.pet?.photos ?? [];
+      const subjectPhotoUrls = [
+        petPhotoUrl,
+        ...petPhotos.map((p) => p.photoUrl).filter((u) => u !== petPhotoUrl),
+      ].filter(Boolean);
+
       const strategy = this.strategyRegistry.get(generation.style.strategyKey);
 
       const constraints: Record<string, any> = {
@@ -89,6 +95,7 @@ export class ImageGenerationProcessor extends WorkerHost {
       const result = await strategy.execute({
         generationId,
         petPhotoUrl,
+        subjectPhotoUrls,
         style: generation.style,
         pet: petContext as Pet,
         format: generation.format,

@@ -14,6 +14,7 @@ import { ExpensesModule } from '../expenses/expenses.module';
 import { StrategyRegistry } from './pipeline/strategy.registry';
 import { DefaultStyleStrategy } from './pipeline/strategies/default.strategy';
 import { StyleTransferRolesStrategy } from './pipeline/strategies/style-transfer-roles.strategy';
+import { StyleTransferRolesMultiStrategy } from './pipeline/strategies/style-transfer-roles-multi.strategy';
 
 // Providers
 import { OpenRouterPromptService } from './providers/openrouter/openrouter-prompt.service';
@@ -35,6 +36,7 @@ import { FalService } from './providers/fal/fal.service';
     StrategyRegistry,
     DefaultStyleStrategy,
     StyleTransferRolesStrategy,
+    StyleTransferRolesMultiStrategy,
     // Providers
     OpenRouterPromptService,
     FalService,

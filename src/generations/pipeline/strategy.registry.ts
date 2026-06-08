@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { BaseStyleStrategy } from './pipeline.types';
 import { DefaultStyleStrategy } from './strategies/default.strategy';
 import { StyleTransferRolesStrategy } from './strategies/style-transfer-roles.strategy';
+import { StyleTransferRolesMultiStrategy } from './strategies/style-transfer-roles-multi.strategy';
 
 @Injectable()
 export class StrategyRegistry {
@@ -11,9 +12,11 @@ export class StrategyRegistry {
   constructor(
     private defaultStrategy: DefaultStyleStrategy,
     private styleTransferRolesStrategy: StyleTransferRolesStrategy,
+    private styleTransferRolesMultiStrategy: StyleTransferRolesMultiStrategy,
   ) {
     this.register(defaultStrategy);
     this.register(styleTransferRolesStrategy);
+    this.register(styleTransferRolesMultiStrategy);
   }
 
   register(strategy: BaseStyleStrategy): void {

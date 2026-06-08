@@ -259,7 +259,11 @@ export class GenerationsService {
       where: { id: generationId },
       include: {
         style: { include: { visionConfig: true, imageGenConfig: true } },
-        pet: true,
+        pet: {
+          include: {
+            photos: { orderBy: [{ isPrimary: 'desc' }, { orderIndex: 'asc' }] },
+          },
+        },
         petPhoto: true,
         format: true,
       },

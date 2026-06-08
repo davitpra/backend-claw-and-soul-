@@ -413,7 +413,6 @@ export class PictoremProvider implements PodProvider {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   cancel(_podOrderId: string): Promise<void> {
     // Pictorem (ArtFlow 0.1) has no cancellation endpoint.
     // To cancel, open the Pictorem panel and use "remove quote" on the order.

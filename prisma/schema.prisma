@@ -272,11 +272,37 @@ model ProductReference {
   generations     Generation[]
   productVariants ProductFormatVariant[]
   orderItems      OrderItem[]
+  images          ProductImage[]
 
   @@index([isActive])
   @@index([styleId])
   @@index([productType])
   @@map("product_references")
+}
+
+// Contextual/presentation images for a product (scene, in-use, explainer,
+// gallery). These are NOT synced from Shopify — they live only in this app
+// (Cloudinary + DB) so the Shopify product media gallery stays clean and the
+// headless frontend composes them with the product's Style images.
+model ProductImage {
+  id                     String   @id @default(uuid())
+  productRefId           String   @map("product_ref_id")
+  productFormatVariantId String?  @map("product_format_variant_id") // null = General (fallback for all variants)
+  imageUrl               String   @map("image_url")
+  storageKey             String   @map("storage_key")
+  type                   String   @default("scene") // scene | in_use | explainer | gallery
+  altImage               String?  @map("alt_image")
+  orderIndex             Int      @map("order_index")
+  isPrimary              Boolean  @default(false) @map("is_primary")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  productRef           ProductReference      @relation(fields: [productRefId], references: [id], onDelete: Cascade)
+  productFormatVariant ProductFormatVariant? @relation(fields: [productFormatVariantId], references: [id], onDelete: SetNull)
+
+  @@index([productRefId])
+  @@index([productRefId, orderIndex])
+  @@index([productRefId, productFormatVariantId])
+  @@map("product_images")
 }
 
 model ProductFormatVariant {
@@ -292,9 +318,10 @@ model ProductFormatVariant {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
 
-  productRef ProductReference @relation(fields: [productRefId], references: [id], onDelete: Cascade)
-  format     Format           @relation(fields: [formatId], references: [id], onDelete: Cascade)
-  orderItems OrderItem[]
+  productRef    ProductReference @relation(fields: [productRefId], references: [id], onDelete: Cascade)
+  format        Format           @relation(fields: [formatId], references: [id], onDelete: Cascade)
+  orderItems    OrderItem[]
+  productImages ProductImage[]
 
   @@unique([productRefId, shopifyVariantId])
   @@index([shopifyVariantId])

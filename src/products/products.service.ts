@@ -1,14 +1,18 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { LinkVariantDto } from './dto/link-variant.dto';
 import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
+import { UpdateProductImageDto } from './dto/update-product-image.dto';
 import { derivePreviewUrl } from '../styles/style-preview.util';
 
 const PRODUCT_INCLUDE = {
@@ -57,7 +61,10 @@ function toShopifyVariantGid(id: string): string {
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private storageService: StorageService,
+  ) {}
 
   async findAll() {
     const rows = await this.prisma.productReference.findMany({
@@ -94,6 +101,12 @@ export class ProductsService {
           where: { isActive: true },
           include: { format: true },
         },
+        images: {
+          orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            productFormatVariant: { select: { shopifyVariantId: true } },
+          },
+        },
       },
     });
 
@@ -120,6 +133,19 @@ export class ProductsService {
       description: product.description,
       style: mapped.style,
       productType: product.productType,
+      images: product.images.map((img) => ({
+        id: img.id,
+        productFormatVariantId: img.productFormatVariantId,
+        // GID matching selectedVariantId in the storefront; null = General.
+        shopifyVariantId: img.productFormatVariant
+          ? toShopifyVariantGid(img.productFormatVariant.shopifyVariantId)
+          : null,
+        imageUrl: img.imageUrl,
+        type: img.type,
+        altImage: img.altImage,
+        isPrimary: img.isPrimary,
+        orderIndex: img.orderIndex,
+      })),
       variants: [...seenFormats.values()].map((v) => ({
         shopifyVariantId: toShopifyVariantGid(v.shopifyVariantId),
         shopifyVariantTitle: v.shopifyVariantTitle,
@@ -296,5 +322,132 @@ export class ProductsService {
       data,
       include: { format: { select: { id: true, displayName: true } } },
     });
+  }
+
+  // ── Contextual images (app-owned, not synced from Shopify) ──────────────
+
+  async listImages(productRefId: string, productFormatVariantId?: string) {
+    await this.findOne(productRefId);
+    return this.prisma.productImage.findMany({
+      where: {
+        productRefId,
+        ...(productFormatVariantId ? { productFormatVariantId } : {}),
+      },
+      orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  // Ensures the Shopify variant (ProductFormatVariant) belongs to this product
+  // before associating an image with it. Throws 400 otherwise.
+  private async assertVariantBelongsToProduct(
+    productRefId: string,
+    productFormatVariantId: string,
+  ) {
+    const variant = await this.prisma.productFormatVariant.findFirst({
+      where: { id: productFormatVariantId, productRefId },
+      select: { id: true },
+    });
+    if (!variant) {
+      throw new BadRequestException('La variante no pertenece a este producto');
+    }
+  }
+
+  async addImage(
+    productRefId: string,
+    file: Express.Multer.File,
+    type?: string,
+    altImage?: string,
+    orderIndex?: number,
+    productFormatVariantId?: string,
+  ) {
+    await this.findOne(productRefId);
+    if (productFormatVariantId) {
+      await this.assertVariantBelongsToProduct(
+        productRefId,
+        productFormatVariantId,
+      );
+    }
+
+    const key = `products/${productRefId}/${uuidv4()}`;
+    const imageUrl = await this.storageService.upload(
+      key,
+      file.buffer,
+      file.mimetype,
+    );
+
+    return this.prisma.productImage.create({
+      data: {
+        productRefId,
+        productFormatVariantId: productFormatVariantId ?? null,
+        imageUrl,
+        storageKey: key,
+        type: type ?? 'scene',
+        altImage,
+        orderIndex: orderIndex ?? 0,
+      },
+    });
+  }
+
+  async updateImage(
+    productRefId: string,
+    imgId: string,
+    dto: UpdateProductImageDto,
+  ) {
+    const image = await this.prisma.productImage.findFirst({
+      where: { id: imgId, productRefId },
+    });
+
+    if (!image) {
+      throw new NotFoundException('Product image not found');
+    }
+
+    if (
+      dto.productFormatVariantId !== undefined &&
+      dto.productFormatVariantId !== null
+    ) {
+      await this.assertVariantBelongsToProduct(
+        productRefId,
+        dto.productFormatVariantId,
+      );
+    }
+
+    // "Primary" is scoped per variant bucket, so reset only within the same
+    // variant (the bucket the image belongs to, or the one it's moving to).
+    const targetVariantId =
+      dto.productFormatVariantId !== undefined
+        ? dto.productFormatVariantId
+        : image.productFormatVariantId;
+    if (dto.isPrimary === true) {
+      await this.prisma.productImage.updateMany({
+        where: { productRefId, productFormatVariantId: targetVariantId },
+        data: { isPrimary: false },
+      });
+    }
+
+    return this.prisma.productImage.update({
+      where: { id: imgId },
+      data: {
+        ...(dto.isPrimary !== undefined && { isPrimary: dto.isPrimary }),
+        ...(dto.orderIndex !== undefined && { orderIndex: dto.orderIndex }),
+        ...(dto.altImage !== undefined && { altImage: dto.altImage }),
+        ...(dto.type !== undefined && { type: dto.type }),
+        ...(dto.productFormatVariantId !== undefined && {
+          productFormatVariantId: dto.productFormatVariantId,
+        }),
+      },
+    });
+  }
+
+  async removeImage(productRefId: string, imgId: string) {
+    const image = await this.prisma.productImage.findFirst({
+      where: { id: imgId, productRefId },
+    });
+
+    if (!image) {
+      throw new NotFoundException('Product image not found');
+    }
+
+    await this.storageService.delete(image.storageKey);
+    return this.prisma.productImage.delete({ where: { id: imgId } });
   }
 }

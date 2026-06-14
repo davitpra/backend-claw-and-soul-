@@ -1,25 +1,36 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  DefaultValuePipe,
   Delete,
   Get,
   NotFoundException,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
+  Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { LinkVariantDto } from './dto/link-variant.dto';
 import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
+import { UpdateProductImageDto } from './dto/update-product-image.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
@@ -120,6 +131,7 @@ export class AdminProductsController {
       return {
         product: { id: product.id, displayName: product.displayName },
         linkedVariants: dbVariants.map((v) => ({
+          id: v.id,
           format: { id: v.format.id, displayName: v.format.displayName },
           shopifyVariantId: v.shopifyVariantId,
           shopifyVariantTitle: v.shopifyVariantTitle,
@@ -150,6 +162,7 @@ export class AdminProductsController {
       if (linkedVariantsMap.has(shopifyVariantId)) {
         const dbVariant = linkedVariantsMap.get(shopifyVariantId)!;
         linkedVariants.push({
+          id: dbVariant.id,
           format: {
             id: dbVariant.format.id,
             displayName: dbVariant.format.displayName,
@@ -223,6 +236,104 @@ export class AdminProductsController {
       shopifyProduct.variants,
       product.displayName,
     );
+  }
+
+  @Get(':productId/images')
+  @ApiOperation({ summary: 'List contextual images for a product' })
+  @ApiQuery({
+    name: 'product_format_variant_id',
+    required: false,
+    type: String,
+  })
+  @ApiResponse({ status: 200, description: 'Images retrieved' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  listImages(
+    @Param('productId') productId: string,
+    @Query('product_format_variant_id') productFormatVariantId?: string,
+  ) {
+    return this.productsService.listImages(productId, productFormatVariantId);
+  }
+
+  @Post(':productId/images')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        type: {
+          type: 'string',
+          enum: ['scene', 'in_use', 'explainer', 'gallery'],
+        },
+        product_format_variant_id: { type: 'string' },
+        alt_image: { type: 'string' },
+        order_index: { type: 'integer' },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiOperation({
+    summary: 'Upload a contextual image (scene / in-use / explainer / gallery)',
+  })
+  @ApiQuery({ name: 'type', required: false, type: String })
+  @ApiQuery({
+    name: 'product_format_variant_id',
+    required: false,
+    type: String,
+  })
+  @ApiQuery({ name: 'alt_image', required: false, type: String })
+  @ApiQuery({ name: 'order_index', required: false, type: Number })
+  @ApiResponse({ status: 201, description: 'Image uploaded successfully' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  addImage(
+    @Param('productId') productId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Query('type') type?: string,
+    @Query('alt_image') altImage?: string,
+    @Query('order_index', new DefaultValuePipe(0), ParseIntPipe)
+    orderIndex?: number,
+    @Query('product_format_variant_id') productFormatVariantId?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+    if (!file.mimetype.startsWith('image/')) {
+      throw new BadRequestException('File must be an image');
+    }
+    return this.productsService.addImage(
+      productId,
+      file,
+      type,
+      altImage,
+      orderIndex,
+      productFormatVariantId,
+    );
+  }
+
+  @Patch(':productId/images/:imgId')
+  @ApiOperation({
+    summary: 'Update a product image (set primary / reorder / type / alt)',
+  })
+  @ApiResponse({ status: 200, description: 'Image updated successfully' })
+  @ApiResponse({ status: 404, description: 'Product image not found' })
+  updateImage(
+    @Param('productId') productId: string,
+    @Param('imgId') imgId: string,
+    @Body() dto: UpdateProductImageDto,
+  ) {
+    return this.productsService.updateImage(productId, imgId, dto);
+  }
+
+  @Delete(':productId/images/:imgId')
+  @ApiOperation({ summary: 'Delete a contextual image from a product' })
+  @ApiResponse({ status: 200, description: 'Image deleted successfully' })
+  @ApiResponse({ status: 404, description: 'Product image not found' })
+  removeImage(
+    @Param('productId') productId: string,
+    @Param('imgId') imgId: string,
+  ) {
+    return this.productsService.removeImage(productId, imgId);
   }
 
   @Get('pending-style')

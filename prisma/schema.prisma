@@ -30,6 +30,7 @@ model User {
   refreshTokens RefreshToken[]
   orders        Order[]
   expenses      Expense[]
+  cart          Cart?
 
   @@index([email])
   @@index([role])
@@ -50,6 +51,41 @@ model RefreshToken {
   @@index([token])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+// ============================================
+// SHOPPING CART
+// ============================================
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String     @unique @map("user_id")
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  @@map("carts")
+}
+
+model CartItem {
+  id           String   @id @default(uuid())
+  cartId       String   @map("cart_id")
+  cart         Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variantId    String   @map("variant_id")
+  name         String
+  size         String?
+  style        String?
+  color        String?
+  price        Decimal  @db.Decimal(10, 2)
+  quantity     Int      @default(1)
+  img          String
+  generationId String?  @map("generation_id")
+  imageUrl     String?  @map("image_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([cartId])
+  @@map("cart_items")
 }
 
 // ============================================

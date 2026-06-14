@@ -69,7 +69,11 @@ export class CartController {
   @ApiOperation({ summary: 'Set imageUrl on items matching a generationId' })
   @ApiResponse({ status: 200, description: 'Image updated successfully' })
   updateImage(@CurrentUser() user: JwtPayload, @Body() dto: UpdateImageDto) {
-    return this.cartService.updateImage(user.sub, dto.generationId, dto.imageUrl);
+    return this.cartService.updateImage(
+      user.sub,
+      dto.generationId,
+      dto.imageUrl,
+    );
   }
 
   @Post('merge')

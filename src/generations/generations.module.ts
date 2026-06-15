@@ -12,7 +12,8 @@ import { ExpensesModule } from '../expenses/expenses.module';
 
 // Pipeline
 import { StrategyRegistry } from './pipeline/strategy.registry';
-import { DefaultStyleStrategy } from './pipeline/strategies/default.strategy';
+import { StyleDrivenPromptStrategy } from './pipeline/strategies/style-driven-prompt.strategy';
+import { StyleDrivenPromptMultiStrategy } from './pipeline/strategies/style-driven-prompt-multi.strategy';
 import { StyleTransferRolesStrategy } from './pipeline/strategies/style-transfer-roles.strategy';
 import { StyleTransferRolesMultiStrategy } from './pipeline/strategies/style-transfer-roles-multi.strategy';
 
@@ -34,7 +35,8 @@ import { FalService } from './providers/fal/fal.service';
     ImageGenerationProcessor,
     // Pipeline
     StrategyRegistry,
-    DefaultStyleStrategy,
+    StyleDrivenPromptStrategy,
+    StyleDrivenPromptMultiStrategy,
     StyleTransferRolesStrategy,
     StyleTransferRolesMultiStrategy,
     // Providers

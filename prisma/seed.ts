@@ -79,7 +79,7 @@ async function main() {
         displayName: styleData.displayName,
         category: styleData.category,
         isActive: true,
-        strategyKey: 'default',
+        strategyKey: 'style-driven-prompt',
         promptTemplate: DEFAULT_PROMPT_TEMPLATE,
         visionConfigId: defaultVisionConfig.id,
         imageGenConfigId: defaultImageGenConfig.id,

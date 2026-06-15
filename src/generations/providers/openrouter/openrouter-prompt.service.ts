@@ -19,6 +19,9 @@ const DEFAULT_MAX_TOKENS = 400;
 
 export interface OpenRouterPromptInput {
   photoUrl: string;
+  /** Optional extra images. When provided (non-empty), all are sent to the VLM
+   *  instead of just `photoUrl`. Falls back to `[photoUrl]` when omitted. */
+  photoUrls?: string[];
   /** Full prompt sent to the VLM. Supports {{petName}}, {{petSpecies}}, {{petBreed}},
    *  plus any key from templateVars (e.g. {{maxPets}}, {{colorCount}}). */
   promptTemplate: string;
@@ -64,7 +67,9 @@ export class OpenRouterPromptService {
       'openrouter/router/vision',
       {
         input: {
-          image_urls: [input.photoUrl],
+          image_urls: input.photoUrls?.length
+            ? input.photoUrls
+            : [input.photoUrl],
           model,
           system_prompt: input.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
           prompt: this.composeUserPrompt(input),

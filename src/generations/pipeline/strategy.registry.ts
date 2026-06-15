@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BaseStyleStrategy } from './pipeline.types';
-import { DefaultStyleStrategy } from './strategies/default.strategy';
+import { StyleDrivenPromptStrategy } from './strategies/style-driven-prompt.strategy';
+import { StyleDrivenPromptMultiStrategy } from './strategies/style-driven-prompt-multi.strategy';
 import { StyleTransferRolesStrategy } from './strategies/style-transfer-roles.strategy';
 import { StyleTransferRolesMultiStrategy } from './strategies/style-transfer-roles-multi.strategy';
 
@@ -10,11 +11,13 @@ export class StrategyRegistry {
   private readonly map = new Map<string, BaseStyleStrategy>();
 
   constructor(
-    private defaultStrategy: DefaultStyleStrategy,
+    private styleDrivenPromptStrategy: StyleDrivenPromptStrategy,
+    private styleDrivenPromptMultiStrategy: StyleDrivenPromptMultiStrategy,
     private styleTransferRolesStrategy: StyleTransferRolesStrategy,
     private styleTransferRolesMultiStrategy: StyleTransferRolesMultiStrategy,
   ) {
-    this.register(defaultStrategy);
+    this.register(styleDrivenPromptStrategy);
+    this.register(styleDrivenPromptMultiStrategy);
     this.register(styleTransferRolesStrategy);
     this.register(styleTransferRolesMultiStrategy);
   }
@@ -27,8 +30,10 @@ export class StrategyRegistry {
   get(key: string): BaseStyleStrategy {
     const strategy = this.map.get(key);
     if (!strategy) {
-      this.logger.warn(`Unknown strategy "${key}", falling back to "default"`);
-      return this.map.get('default')!;
+      this.logger.warn(
+        `Unknown strategy "${key}", falling back to "style-driven-prompt"`,
+      );
+      return this.map.get('style-driven-prompt')!;
     }
     return strategy;
   }

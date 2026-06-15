@@ -9,10 +9,12 @@ import { OpenRouterPromptService } from '../../providers/openrouter/openrouter-p
 import { FalService } from '../../providers/fal/fal.service';
 import { StorageService } from '../../../storage/storage.service';
 
+const MAX_SUBJECT_IMAGES = 4;
+
 @Injectable()
-export class DefaultStyleStrategy extends BaseStyleStrategy {
-  readonly key = 'default';
-  private readonly logger = new Logger(DefaultStyleStrategy.name);
+export class StyleDrivenPromptMultiStrategy extends BaseStyleStrategy {
+  readonly key = 'style-driven-prompt-multi';
+  private readonly logger = new Logger(StyleDrivenPromptMultiStrategy.name);
 
   constructor(
     private openRouterPrompt: OpenRouterPromptService,
@@ -48,14 +50,26 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
 
     if (!visionConfig) {
       throw new Error(
-        `Style "${style.name}" requires a visionConfig for strategy "default"`,
+        `Style "${style.name}" requires a visionConfig for strategy "style-driven-prompt-multi"`,
       );
     }
     if (!imageGenConfig) {
       throw new Error(
-        `Style "${style.name}" requires an imageGenConfig for strategy "default"`,
+        `Style "${style.name}" requires an imageGenConfig for strategy "style-driven-prompt-multi"`,
       );
     }
+
+    // Usar TODAS las fotos de la mascota (cap de MAX_SUBJECT_IMAGES) tanto para
+    // el análisis de visión como para la generación en Fal.ai
+    const subjectUrls = (
+      ctx.subjectPhotoUrls?.length ? ctx.subjectPhotoUrls : [ctx.petPhotoUrl]
+    )
+      .filter(Boolean)
+      .slice(0, MAX_SUBJECT_IMAGES);
+
+    this.logger.log(
+      `[${ctx.generationId}] Using ${subjectUrls.length} subject image(s)`,
+    );
 
     const promptTemplate = style.promptTemplate;
     const templateVars = (style.templateVars ?? null) as Record<
@@ -90,12 +104,14 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
       visionSystemPrompt,
       visionMaxTokens,
       falModel,
+      subjectImageCount: subjectUrls.length,
       constraints: ctx.constraints,
     };
 
-    // Step 1 — Vision + prompt generation via OpenRouter VLM
+    // Step 1 — Vision + prompt generation via OpenRouter VLM (todas las fotos)
     const visionResult = await this.openRouterPrompt.buildPrompt({
       photoUrl: ctx.petPhotoUrl,
+      photoUrls: subjectUrls,
       promptTemplate,
       templateVars: mergedTemplateVars,
       petContext: {
@@ -115,11 +131,11 @@ export class DefaultStyleStrategy extends BaseStyleStrategy {
     // aspectRatio from constraints overrides the format's value
     const aspectRatio = ctx.constraints.aspectRatio ?? ctx.format?.aspectRatio;
 
-    // Step 2 — Generate image with Fal.ai
+    // Step 2 — Generate image with Fal.ai (todas las fotos como referencia)
     const falResult = await this.fal.generate({
       model: falModel ?? 'fal-ai/flux/dev',
       prompt,
-      imageUrls: [ctx.petPhotoUrl],
+      imageUrls: subjectUrls,
       aspectRatio,
       params: falParameters,
     });

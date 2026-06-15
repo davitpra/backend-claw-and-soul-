@@ -190,7 +190,7 @@ model Style {
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
 
   // Pipeline config
-  strategyKey          String  @default("default") @map("strategy_key")
+  strategyKey          String  @default("style-driven-prompt") @map("strategy_key")
   promptTemplate       String  @map("prompt_template") @db.Text
   templateVars         Json?   @map("template_vars")
   templateVarOptions   Json?   @map("template_var_options")

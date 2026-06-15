@@ -41,8 +41,21 @@ export class CompatService {
     if (!product) throw new NotFoundException(`Product ${productId} not found`);
     if (!product.style) return [];
 
+    const thanksImg = await this.prisma.productImage.findFirst({
+      where: {
+        productRefId: productId,
+        productFormatVariantId: null,
+        type: 'thanks',
+      },
+      orderBy: [{ isPrimary: 'desc' }, { orderIndex: 'asc' }],
+    });
+
     const { images, ...styleRest } = product.style;
-    const style = { ...styleRest, previewUrl: derivePreviewUrl(images) };
+    const style = {
+      ...styleRest,
+      previewUrl: derivePreviewUrl(images),
+      thanksUrl: thanksImg?.imageUrl ?? null,
+    };
 
     return [style];
   }

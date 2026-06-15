@@ -264,7 +264,7 @@ export class AdminProductsController {
         file: { type: 'string', format: 'binary' },
         type: {
           type: 'string',
-          enum: ['scene', 'in_use', 'explainer', 'gallery'],
+          enum: ['scene', 'in_use', 'explainer', 'gallery', 'thanks'],
         },
         product_format_variant_id: { type: 'string' },
         alt_image: { type: 'string' },

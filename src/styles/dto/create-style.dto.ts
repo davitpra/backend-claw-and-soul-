@@ -24,14 +24,6 @@ export class CreateStyleDto {
   @MaxLength(100)
   category: string;
 
-  @ApiProperty({
-    example: 'https://cdn.example.com/thanks/watercolor.jpg',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  thanksUrl?: string;
-
   @ApiProperty({ example: 'default', required: false })
   @IsOptional()
   @IsString()

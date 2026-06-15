@@ -14,6 +14,7 @@ export const PRODUCT_IMAGE_TYPES = [
   'in_use',
   'explainer',
   'gallery',
+  'thanks',
 ] as const;
 
 export class UpdateProductImageDto {

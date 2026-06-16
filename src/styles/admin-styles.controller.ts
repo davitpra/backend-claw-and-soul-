@@ -88,14 +88,23 @@ export class AdminStylesController {
 
   @Delete(':styleId/permanent')
   @ApiOperation({ summary: 'Hard delete a style (irreversible)' })
+  @ApiQuery({
+    name: 'force',
+    required: false,
+    type: Boolean,
+    description: 'Si es true, borra también las generaciones asociadas',
+  })
   @ApiResponse({ status: 200, description: 'Style permanently deleted' })
   @ApiResponse({
     status: 400,
     description: 'Style has generations and cannot be deleted',
   })
   @ApiResponse({ status: 404, description: 'Style not found' })
-  hardDelete(@Param('styleId') styleId: string) {
-    return this.stylesService.hardDelete(styleId);
+  hardDelete(
+    @Param('styleId') styleId: string,
+    @Query('force') force?: string,
+  ) {
+    return this.stylesService.hardDelete(styleId, force === 'true');
   }
 
   @Post(':styleId/images')

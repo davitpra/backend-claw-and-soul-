@@ -110,6 +110,7 @@ export class StylesService {
         images: { orderBy: { orderIndex: 'asc' } },
         visionConfig: true,
         imageGenConfig: true,
+        _count: { select: { generations: true } },
       },
     });
     return styles.map((s) => ({
@@ -159,27 +160,42 @@ export class StylesService {
     });
   }
 
-  async hardDelete(id: string) {
+  async hardDelete(id: string, force = false) {
     const style = await this.prisma.style.findUnique({
       where: { id },
       include: {
         images: true,
-        _count: { select: { generations: true } },
+        generations: {
+          select: { id: true, resultStorageKey: true },
+        },
       },
     });
     if (!style) throw new NotFoundException('Style not found');
 
-    if (style._count.generations > 0) {
+    if (style.generations.length > 0 && !force) {
       throw new BadRequestException(
-        `No se puede eliminar permanentemente: el estilo tiene ${style._count.generations} generación(es) asociada(s). Desactívalo en su lugar.`,
+        `No se puede eliminar permanentemente: el estilo tiene ${style.generations.length} generación(es) asociada(s). Desactívalo en su lugar, o usa force=true para borrarlas también.`,
       );
     }
 
-    for (const img of style.images) {
-      await this.storageService.delete(img.storageKey).catch(() => null);
+    // Borra archivos en storage (imágenes del catálogo + resultados de generaciones).
+    const storageKeys = [
+      ...style.images.map((img) => img.storageKey),
+      ...style.generations
+        .map((g) => g.resultStorageKey)
+        .filter((key): key is string => !!key),
+    ];
+    for (const key of storageKeys) {
+      await this.storageService.delete(key).catch(() => null);
     }
 
-    return this.prisma.style.delete({ where: { id } });
+    // Borra generaciones (si las hay) y el estilo en una sola transacción.
+    return this.prisma.$transaction(async (tx) => {
+      if (style.generations.length > 0) {
+        await tx.generation.deleteMany({ where: { styleId: id } });
+      }
+      return tx.style.delete({ where: { id } });
+    });
   }
 
   async addImage(

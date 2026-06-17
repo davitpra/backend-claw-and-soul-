@@ -6,7 +6,13 @@ import {
 } from './dto/shopify-product.dto';
 
 function normalizeVariantOption(s: string | null | undefined): string {
-  return (s ?? '').trim().toLowerCase().replace(/×/g, 'x').replace(/\s+/g, '');
+  return (s ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/×/g, 'x') // multiplication sign -> x
+    .replace(/[″”“"]/g, '"') // double prime / curly quotes -> straight quote
+    .replace(/[′’‘']/g, "'") // single prime / curly quotes -> straight apostrophe
+    .replace(/\s+/g, '');
 }
 
 @Injectable()

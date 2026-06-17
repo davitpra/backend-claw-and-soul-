@@ -6,6 +6,8 @@ import { OrdersService } from './orders.service';
 import { OrdersSyncService } from './orders-sync.service';
 import { AdminOrdersService } from './admin-orders.service';
 import { AdminOrdersController } from './admin-orders.controller';
+import { UserOrdersService } from './user-orders.service';
+import { OrdersController } from './orders.controller';
 import { ShopifyOrdersWebhookController } from './shopify-orders-webhook.controller';
 import { OrdersIngestProcessor } from './processors/orders-ingest.processor';
 import { PodProcessor } from './processors/pod.processor';
@@ -29,11 +31,16 @@ import { FxModule } from '../fx/fx.module';
     ExpensesModule,
     FxModule,
   ],
-  controllers: [ShopifyOrdersWebhookController, AdminOrdersController],
+  controllers: [
+    ShopifyOrdersWebhookController,
+    AdminOrdersController,
+    OrdersController,
+  ],
   providers: [
     OrdersService,
     OrdersSyncService,
     AdminOrdersService,
+    UserOrdersService,
     OrdersIngestProcessor,
     PodProcessor,
     PodService,

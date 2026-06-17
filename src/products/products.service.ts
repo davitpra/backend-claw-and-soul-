@@ -133,6 +133,7 @@ export class ProductsService {
       description: product.description,
       style: mapped.style,
       productType: product.productType,
+      showcaseCollectionHandle: product.showcaseCollectionHandle,
       images: product.images.map((img) => ({
         id: img.id,
         productFormatVariantId: img.productFormatVariantId,

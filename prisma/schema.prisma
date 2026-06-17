@@ -262,6 +262,7 @@ model ProductReference {
   description      String?
   styleId          String?  @map("style_id")
   productType      String?  @map("product_type")
+  showcaseCollectionHandle String? @map("showcase_collection_handle")
   isActive          Boolean  @default(true) @map("is_active")
   fulfillmentMethod String   @default("in_house") @map("fulfillment_method") // in_house | pod
   createdAt         DateTime @default(now()) @map("created_at")

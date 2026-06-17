@@ -41,4 +41,14 @@ export class CreateProductDto {
   @IsString()
   @MaxLength(100)
   productType?: string;
+
+  @ApiProperty({
+    description:
+      'Shopify collection handle shown in the product page showcase section',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  showcaseCollectionHandle?: string;
 }

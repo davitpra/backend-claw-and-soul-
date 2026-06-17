@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsUUID, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsIn, MaxLength } from 'class-validator';
 
 export class CreateProductDto {
   @ApiProperty({ example: 'gid://shopify/Product/123456789' })
@@ -34,15 +34,6 @@ export class CreateProductDto {
   styleId?: string;
 
   @ApiProperty({
-    description: 'Product type string synced from Shopify (e.g. "Canvas")',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  productType?: string;
-
-  @ApiProperty({
     description:
       'Shopify collection handle shown in the product page showcase section',
     required: false,
@@ -51,4 +42,15 @@ export class CreateProductDto {
   @IsString()
   @MaxLength(255)
   showcaseCollectionHandle?: string;
+
+  @ApiProperty({
+    description:
+      'Storefront template override. Null = use default (Canvas) fallback.',
+    enum: ['Canvas', 'Poster'],
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['Canvas', 'Poster'])
+  template?: string;
 }

@@ -261,7 +261,7 @@ model ProductReference {
   displayName      String   @map("display_name")
   description      String?
   styleId          String?  @map("style_id")
-  productType      String?  @map("product_type")
+  template         String?  @map("template") // storefront template override: Canvas | Poster
   showcaseCollectionHandle String? @map("showcase_collection_handle")
   isActive          Boolean  @default(true) @map("is_active")
   fulfillmentMethod String   @default("in_house") @map("fulfillment_method") // in_house | pod
@@ -276,7 +276,6 @@ model ProductReference {
 
   @@index([isActive])
   @@index([styleId])
-  @@index([productType])
   @@map("product_references")
 }
 

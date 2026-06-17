@@ -11,6 +11,7 @@ const mockPrisma = {
   },
   format: {
     findFirst: jest.fn(),
+    findMany: jest.fn(),
   },
   productFormatVariant: {
     upsert: jest.fn(),
@@ -48,7 +49,6 @@ describe('ProductSyncService', () => {
         handle: 'my-poster',
         title: 'My Poster',
         body_html: '<p>desc</p>',
-        product_type: 'Poster',
         status: 'active',
         variants: [],
       });
@@ -61,7 +61,6 @@ describe('ProductSyncService', () => {
             name: 'my-poster',
             displayName: 'My Poster',
             description: 'desc',
-            productType: 'Poster',
             isActive: true,
           }) as unknown,
         }),
@@ -81,7 +80,6 @@ describe('ProductSyncService', () => {
         handle: 'my-poster',
         title: 'My Poster Updated',
         body_html: '',
-        product_type: 'Canvas',
         status: 'active',
         variants: [],
       });
@@ -92,7 +90,9 @@ describe('ProductSyncService', () => {
 
   describe('syncVariants', () => {
     it('upserts variant when matching format exists', async () => {
-      mockPrisma.format.findFirst.mockResolvedValue({ id: 'fmt-1' });
+      mockPrisma.format.findMany.mockResolvedValue([
+        { id: 'fmt-1', shopifyVariantOption: '8x10' },
+      ]);
       mockPrisma.productFormatVariant.upsert.mockResolvedValue({});
       mockPrisma.productFormatVariant.updateMany.mockResolvedValue({});
 
@@ -129,7 +129,7 @@ describe('ProductSyncService', () => {
     });
 
     it('skips variant when no matching format exists and logs warning', async () => {
-      mockPrisma.format.findFirst.mockResolvedValue(null);
+      mockPrisma.format.findMany.mockResolvedValue([]);
       mockPrisma.productFormatVariant.updateMany.mockResolvedValue({});
 
       const result = await service.syncVariants(
@@ -151,6 +151,7 @@ describe('ProductSyncService', () => {
     });
 
     it('skips variant with no size option and logs warning', async () => {
+      mockPrisma.format.findMany.mockResolvedValue([]);
       mockPrisma.productFormatVariant.updateMany.mockResolvedValue({});
 
       const result = await service.syncVariants(
@@ -168,11 +169,13 @@ describe('ProductSyncService', () => {
       );
 
       expect(result).toEqual({ synced: 0, skipped: 1 });
-      expect(mockPrisma.format.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.productFormatVariant.upsert).not.toHaveBeenCalled();
     });
 
     it('deactivates variants no longer present in Shopify', async () => {
-      mockPrisma.format.findFirst.mockResolvedValue({ id: 'fmt-1' });
+      mockPrisma.format.findMany.mockResolvedValue([
+        { id: 'fmt-1', shopifyVariantOption: '8x10' },
+      ]);
       mockPrisma.productFormatVariant.upsert.mockResolvedValue({});
       mockPrisma.productFormatVariant.updateMany.mockResolvedValue({});
 
@@ -201,6 +204,7 @@ describe('ProductSyncService', () => {
     });
 
     it('handles product with no variants without failing', async () => {
+      mockPrisma.format.findMany.mockResolvedValue([]);
       mockPrisma.productFormatVariant.updateMany.mockResolvedValue({});
 
       const result = await service.syncVariants('ref-1', [], 'my-poster');
@@ -210,7 +214,9 @@ describe('ProductSyncService', () => {
     });
 
     it('stores every variant of the same size as its own row', async () => {
-      mockPrisma.format.findFirst.mockResolvedValue({ id: 'fmt-1' });
+      mockPrisma.format.findMany.mockResolvedValue([
+        { id: 'fmt-1', shopifyVariantOption: '8x10' },
+      ]);
       mockPrisma.productFormatVariant.upsert.mockResolvedValue({});
       mockPrisma.productFormatVariant.updateMany.mockResolvedValue({});
 
@@ -244,7 +250,7 @@ describe('ProductSyncService', () => {
 
       expect(result).toEqual({ synced: 3, skipped: 0 });
       expect(mockPrisma.productFormatVariant.upsert).toHaveBeenCalledTimes(3);
-      expect(mockPrisma.format.findFirst).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.format.findMany).toHaveBeenCalledTimes(1);
 
       expect(mockPrisma.productFormatVariant.upsert).toHaveBeenCalledWith(
         expect.objectContaining({

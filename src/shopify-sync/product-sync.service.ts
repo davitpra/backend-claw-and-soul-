@@ -24,7 +24,6 @@ export class ProductSyncService {
       shopifyHandle: shopifyProduct.handle,
       displayName: shopifyProduct.title,
       description: this.stripHtml(shopifyProduct.body_html),
-      productType: shopifyProduct.product_type?.trim() || null,
       isActive: shopifyProduct.status === 'active',
     };
 

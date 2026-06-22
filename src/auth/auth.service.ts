@@ -14,6 +14,11 @@ import { LoginDto } from './dto/login.dto';
 import type { User } from '@prisma/client';
 import type { JwtPayload } from './strategies/jwt.strategy';
 
+export interface DeviceInfo {
+  userAgent?: string;
+  ipAddress?: string;
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -24,7 +29,7 @@ export class AuthService {
     private configService: ConfigService,
   ) {}
 
-  async register(registerDto: RegisterDto) {
+  async register(registerDto: RegisterDto, deviceInfo?: DeviceInfo) {
     // Check if user exists
     const existingUser = await this.prisma.user.findUnique({
       where: { email: registerDto.email },
@@ -50,7 +55,12 @@ export class AuthService {
       this.logger.log(`New user registered: ${user.email}`);
 
       // Generate tokens
-      const tokens = await this.generateTokens(user.id, user.email, user.role);
+      const tokens = await this.generateTokens(
+        user.id,
+        user.email,
+        user.role,
+        deviceInfo,
+      );
 
       return {
         user: this.sanitizeUser(user),
@@ -63,7 +73,7 @@ export class AuthService {
     }
   }
 
-  async login(loginDto: LoginDto) {
+  async login(loginDto: LoginDto, deviceInfo?: DeviceInfo) {
     const user = await this.prisma.user.findUnique({
       where: { email: loginDto.email },
     });
@@ -93,7 +103,31 @@ export class AuthService {
 
     this.logger.log(`User logged in: ${user.email}`);
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    // Replace any existing active session for the SAME device so a browser that
+    // re-logs in keeps a single active session (avoids "same device appearing
+    // as multiple devices" in the active-sessions list).
+    if (deviceInfo?.userAgent) {
+      const replaced = await this.prisma.refreshToken.updateMany({
+        where: {
+          userId: user.id,
+          isRevoked: false,
+          userAgent: deviceInfo.userAgent,
+        },
+        data: { isRevoked: true },
+      });
+      if (replaced.count > 0) {
+        this.logger.log(
+          `Revoked ${replaced.count} previous session(s) for the same device of user ${user.id}`,
+        );
+      }
+    }
+
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      user.role,
+      deviceInfo,
+    );
 
     return {
       user: this.sanitizeUser(user),
@@ -131,21 +165,35 @@ export class AuthService {
         throw new UnauthorizedException('Refresh token expired');
       }
 
-      // TOKEN ROTATION: Revoke the old refresh token
-      await this.prisma.refreshToken.update({
-        where: { id: storedToken.id },
+      // TOKEN ROTATION (atomic): revoke the old token with an isRevoked:false
+      // guard so two concurrent refreshes using the same cookie cannot both
+      // proceed and create duplicate active rows for one device. Only the
+      // refresh that actually flips the row (count === 1) is allowed to mint a
+      // new token; the loser aborts.
+      const revoked = await this.prisma.refreshToken.updateMany({
+        where: { id: storedToken.id, isRevoked: false },
         data: { isRevoked: true },
       });
+
+      if (revoked.count === 0) {
+        // Lost the race: another concurrent refresh already rotated this token.
+        throw new UnauthorizedException('Invalid refresh token');
+      }
 
       this.logger.log(
         `Rotating refresh token for user ${payload.sub}. Old token revoked.`,
       );
 
-      // Generate new tokens (including a new refresh token)
+      // Generate new tokens (including a new refresh token), inheriting the
+      // rotated token's device identity so the session keeps its label.
       const tokens = await this.generateTokens(
         payload.sub,
         payload.email,
         payload.role,
+        {
+          userAgent: storedToken.userAgent ?? undefined,
+          ipAddress: storedToken.ipAddress ?? undefined,
+        },
       );
 
       return tokens;
@@ -159,22 +207,30 @@ export class AuthService {
   }
 
   async logout(refreshToken: string) {
-    try {
-      await this.prisma.refreshToken.update({
-        where: { token: this.hashToken(refreshToken) },
-        data: { isRevoked: true },
-      });
-      return { message: 'Logged out successfully' };
-    } catch {
-      // Token might not exist, but that's okay
-      return { message: 'Logged out successfully' };
+    // updateMany (not update) so a missing/stale token does not throw; the
+    // count tells us whether the cookie actually matched an active session.
+    const result = await this.prisma.refreshToken.updateMany({
+      where: { token: this.hashToken(refreshToken) },
+      data: { isRevoked: true },
+    });
+
+    if (result.count === 0) {
+      this.logger.warn(
+        'Logout called with a refresh token that matched no session (stale cookie?).',
+      );
     }
+
+    return { message: 'Logged out successfully' };
   }
 
   /**
    * Get all active sessions for a user
    */
-  async getActiveSessions(userId: string) {
+  async getActiveSessions(userId: string, currentToken?: string) {
+    const hashedCurrent = currentToken
+      ? this.hashToken(currentToken)
+      : undefined;
+
     const sessions = await this.prisma.refreshToken.findMany({
       where: {
         userId,
@@ -183,10 +239,14 @@ export class AuthService {
       },
       select: {
         id: true,
+        token: true,
         createdAt: true,
         expiresAt: true,
+        lastUsedAt: true,
+        userAgent: true,
+        ipAddress: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { lastUsedAt: 'desc' },
     });
 
     return {
@@ -194,6 +254,10 @@ export class AuthService {
         id: session.id,
         createdAt: session.createdAt,
         expiresAt: session.expiresAt,
+        lastUsedAt: session.lastUsedAt,
+        userAgent: session.userAgent,
+        ipAddress: session.ipAddress,
+        isCurrent: hashedCurrent ? session.token === hashedCurrent : false,
       })),
       total: sessions.length,
     };
@@ -257,7 +321,12 @@ export class AuthService {
     }
   }
 
-  private async generateTokens(userId: string, email: string, role: string) {
+  private async generateTokens(
+    userId: string,
+    email: string,
+    role: string,
+    deviceInfo?: DeviceInfo,
+  ) {
     const payload = { sub: userId, email, role };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -286,6 +355,8 @@ export class AuthService {
         userId,
         token: this.hashToken(refreshToken),
         expiresAt,
+        userAgent: deviceInfo?.userAgent,
+        ipAddress: deviceInfo?.ipAddress,
       },
     });
 

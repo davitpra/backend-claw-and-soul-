@@ -13,6 +13,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import type { DeviceInfo } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { Public } from '../common/decorators/public.decorator';
@@ -23,6 +24,13 @@ import type { JwtPayload } from './strategies/jwt.strategy';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  private extractDeviceInfo(req: Request): DeviceInfo {
+    return {
+      userAgent: req.headers['user-agent'],
+      ipAddress: req.ip,
+    };
+  }
 
   private setAuthCookies(
     res: Response,
@@ -64,9 +72,13 @@ export class AuthController {
   @ApiResponse({ status: 409, description: 'Email already registered' })
   async register(
     @Body() registerDto: RegisterDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.register(registerDto);
+    const result = await this.authService.register(
+      registerDto,
+      this.extractDeviceInfo(req),
+    );
 
     // Set tokens in httpOnly cookies
     this.setAuthCookies(res, result.accessToken, result.refreshToken);
@@ -89,8 +101,12 @@ export class AuthController {
   @ApiOperation({ summary: 'Get active sessions for current user' })
   @ApiResponse({ status: 200, description: 'Active sessions retrieved' })
   @ApiResponse({ status: 401, description: 'Not authenticated' })
-  async getActiveSessions(@CurrentUser() user: JwtPayload) {
-    return this.authService.getActiveSessions(user.sub);
+  async getActiveSessions(
+    @CurrentUser() user: JwtPayload,
+    @Req() req: Request,
+  ) {
+    const currentToken = req.cookies?.refreshToken as string | undefined;
+    return this.authService.getActiveSessions(user.sub, currentToken);
   }
 
   @Post('sessions/revoke/:tokenId')
@@ -126,9 +142,13 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
     @Body() loginDto: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.login(loginDto);
+    const result = await this.authService.login(
+      loginDto,
+      this.extractDeviceInfo(req),
+    );
 
     // Set tokens in httpOnly cookies
     this.setAuthCookies(res, result.accessToken, result.refreshToken);

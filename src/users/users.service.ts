@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
+import type { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -20,14 +26,70 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    return user;
+    return this.sanitizeUser(user);
   }
 
   async updateProfile(userId: string, data: { fullName?: string }) {
-    return this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id: userId },
       data,
     });
+
+    return this.sanitizeUser(user);
+  }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const isPasswordValid = await bcrypt.compare(
+      currentPassword,
+      user.passwordHash,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+
+    return { message: 'Password updated successfully' };
+  }
+
+  async updateAvatar(
+    userId: string,
+    avatarUrl: string,
+    avatarStorageKey: string,
+  ) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl, avatarStorageKey },
+    });
+
+    return this.sanitizeUser(user);
+  }
+
+  async removeAvatar(userId: string) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: null, avatarStorageKey: null },
+    });
+
+    return this.sanitizeUser(user);
   }
 
   async updateLastLogin(userId: string) {
@@ -35,5 +97,11 @@ export class UsersService {
       where: { id: userId },
       data: { lastLoginAt: new Date() },
     });
+  }
+
+  private sanitizeUser(user: User): Omit<User, 'passwordHash'> {
+    const { passwordHash, ...result } = user;
+    void passwordHash;
+    return result;
   }
 }

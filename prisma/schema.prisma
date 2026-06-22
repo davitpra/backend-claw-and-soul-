@@ -13,10 +13,12 @@ datasource db {
 
 model User {
   id            String    @id @default(uuid())
-  email         String    @unique
-  passwordHash  String    @map("password_hash")
-  fullName      String?   @map("full_name")
-  role          String    @default("user") // Enum: user, premium, admin
+  email            String    @unique
+  passwordHash     String    @map("password_hash")
+  fullName         String?   @map("full_name")
+  avatarUrl        String?   @map("avatar_url")
+  avatarStorageKey String?   @map("avatar_storage_key")
+  role             String    @default("user") // Enum: user, premium, admin
   emailVerified Boolean   @default(false) @map("email_verified")
   isActive      Boolean   @default(true) @map("is_active")
   lastLoginAt   DateTime? @map("last_login_at")
@@ -38,12 +40,15 @@ model User {
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  token     String   @unique
-  expiresAt DateTime @map("expires_at")
-  isRevoked Boolean  @default(false) @map("is_revoked")
-  createdAt DateTime @default(now()) @map("created_at")
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  token      String   @unique
+  expiresAt  DateTime @map("expires_at")
+  isRevoked  Boolean  @default(false) @map("is_revoked")
+  createdAt  DateTime @default(now()) @map("created_at")
+  userAgent  String?  @map("user_agent")
+  ipAddress  String?  @map("ip_address")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

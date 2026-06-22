@@ -9,6 +9,7 @@ import databaseConfig from './config/database.config';
 import redisConfig from './config/redis.config';
 import jwtConfig from './config/jwt.config';
 import aiConfig from './config/ai.config';
+import googleConfig from './config/google.config';
 
 // Module imports
 import { PrismaModule } from './prisma/prisma.module';
@@ -40,7 +41,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     // Global configuration
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, redisConfig, jwtConfig, aiConfig],
+      load: [databaseConfig, redisConfig, jwtConfig, aiConfig, googleConfig],
       envFilePath: ['.env.local', '.env'],
     }),
 

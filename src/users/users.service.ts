@@ -51,6 +51,13 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    // Accounts created via Google sign-in have no password to change
+    if (!user.passwordHash) {
+      throw new UnauthorizedException(
+        'This account uses Google sign-in and has no password',
+      );
+    }
+
     const isPasswordValid = await bcrypt.compare(
       currentPassword,
       user.passwordHash,

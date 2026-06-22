@@ -16,6 +16,7 @@ import { AuthService } from './auth.service';
 import type { DeviceInfo } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from './strategies/jwt.strategy';
@@ -147,6 +148,29 @@ export class AuthController {
   ) {
     const result = await this.authService.login(
       loginDto,
+      this.extractDeviceInfo(req),
+    );
+
+    // Set tokens in httpOnly cookies
+    this.setAuthCookies(res, result.accessToken, result.refreshToken);
+
+    // Return user data only (no tokens in response body)
+    return { user: result.user };
+  }
+
+  @Public()
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login or register with a Google ID token' })
+  @ApiResponse({ status: 200, description: 'User successfully logged in' })
+  @ApiResponse({ status: 401, description: 'Invalid Google token' })
+  async googleLogin(
+    @Body() googleLoginDto: GoogleLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.loginWithGoogle(
+      googleLoginDto.idToken,
       this.extractDeviceInfo(req),
     );
 

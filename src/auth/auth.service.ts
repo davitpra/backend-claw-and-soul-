@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import type { User } from '@prisma/client';
@@ -82,6 +83,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Users created via Google have no password set
+    if (!user.passwordHash) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
     const isPasswordValid = await bcrypt.compare(
       loginDto.password,
       user.passwordHash,
@@ -120,6 +126,102 @@ export class AuthService {
           `Revoked ${replaced.count} previous session(s) for the same device of user ${user.id}`,
         );
       }
+    }
+
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      user.role,
+      deviceInfo,
+    );
+
+    return {
+      user: this.sanitizeUser(user),
+      ...tokens,
+    };
+  }
+
+  async loginWithGoogle(idToken: string, deviceInfo?: DeviceInfo) {
+    const clientId = this.configService.get<string>('google.clientId');
+
+    if (!clientId) {
+      this.logger.error('GOOGLE_CLIENT_ID is not configured');
+      throw new UnauthorizedException('Google sign-in is not available');
+    }
+
+    // Verify the ID token signature, audience and expiration with Google
+    let payload: import('google-auth-library').TokenPayload | undefined;
+    try {
+      const client = new OAuth2Client(clientId);
+      const ticket = await client.verifyIdToken({
+        idToken,
+        audience: clientId,
+      });
+      payload = ticket.getPayload();
+    } catch (error) {
+      this.logger.warn('Google ID token verification failed', error as Error);
+      throw new UnauthorizedException('Invalid Google token');
+    }
+
+    if (!payload?.email || !payload.email_verified) {
+      throw new UnauthorizedException('Google account email is not verified');
+    }
+
+    const email = payload.email;
+    const googleId = payload.sub;
+
+    // Find-or-create / link by email
+    let user = await this.prisma.user.findUnique({ where: { email } });
+
+    if (user) {
+      // Link the Google identity to the existing account and backfill profile
+      // fields that are still empty.
+      const data: { googleId?: string; fullName?: string; avatarUrl?: string } =
+        {};
+      if (!user.googleId) data.googleId = googleId;
+      if (!user.fullName && payload.name) data.fullName = payload.name;
+      if (!user.avatarUrl && payload.picture) data.avatarUrl = payload.picture;
+
+      if (Object.keys(data).length > 0) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data,
+        });
+      }
+    } else {
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          googleId,
+          fullName: payload.name,
+          avatarUrl: payload.picture,
+          emailVerified: true,
+        },
+      });
+      this.logger.log(`New user registered via Google: ${user.email}`);
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is disabled');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    this.logger.log(`User logged in via Google: ${user.email}`);
+
+    // Keep a single active session per device, mirroring login()
+    if (deviceInfo?.userAgent) {
+      await this.prisma.refreshToken.updateMany({
+        where: {
+          userId: user.id,
+          isRevoked: false,
+          userAgent: deviceInfo.userAgent,
+        },
+        data: { isRevoked: true },
+      });
     }
 
     const tokens = await this.generateTokens(

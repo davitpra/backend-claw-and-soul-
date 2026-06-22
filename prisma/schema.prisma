@@ -14,7 +14,8 @@ datasource db {
 model User {
   id            String    @id @default(uuid())
   email            String    @unique
-  passwordHash     String    @map("password_hash")
+  passwordHash     String?   @map("password_hash")
+  googleId         String?   @unique @map("google_id")
   fullName         String?   @map("full_name")
   avatarUrl        String?   @map("avatar_url")
   avatarStorageKey String?   @map("avatar_storage_key")
@@ -36,6 +37,7 @@ model User {
 
   @@index([email])
   @@index([role])
+  @@index([googleId])
   @@map("users")
 }
 

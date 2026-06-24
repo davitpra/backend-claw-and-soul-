@@ -66,6 +66,7 @@ export class AdminOrdersController {
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'status', required: false, type: String })
   @ApiQuery({ name: 'method', required: false, type: String })
+  @ApiQuery({ name: 'fulfillmentStatus', required: false, type: String })
   @ApiQuery({ name: 'dateFrom', required: false, type: String })
   @ApiQuery({ name: 'dateTo', required: false, type: String })
   @ApiQuery({ name: 'q', required: false, type: String })
@@ -74,6 +75,7 @@ export class AdminOrdersController {
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('status') status?: string,
     @Query('method') method?: string,
+    @Query('fulfillmentStatus') fulfillmentStatus?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('q') q?: string,
@@ -81,6 +83,7 @@ export class AdminOrdersController {
     return this.adminOrdersService.listOrders(page, limit, {
       status,
       method,
+      fulfillmentStatus,
       dateFrom,
       dateTo,
       q,

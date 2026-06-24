@@ -25,6 +25,7 @@ export class AdminOrdersService {
     opts: {
       status?: string;
       method?: string;
+      fulfillmentStatus?: string;
       dateFrom?: string;
       dateTo?: string;
       q?: string;
@@ -57,6 +58,13 @@ export class AdminOrdersService {
       where.items = { some: { fulfillmentMethod: opts.method } };
     }
 
+    if (opts.fulfillmentStatus) {
+      // Shopify guarda `fulfillment_status` como null cuando no hay fulfillment;
+      // en la UI eso se presenta como "unfulfilled".
+      where.fulfillmentStatus =
+        opts.fulfillmentStatus === 'unfulfilled' ? null : opts.fulfillmentStatus;
+    }
+
     const [orders, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
@@ -77,6 +85,7 @@ export class AdminOrdersService {
           items: {
             select: {
               id: true,
+              title: true,
               productionStatus: true,
               fulfillmentMethod: true,
               imageUrl: true,

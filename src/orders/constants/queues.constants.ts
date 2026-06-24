@@ -4,6 +4,7 @@ export const ORDERS_JOB_NAMES = {
   INGEST: 'ingest',
   POD_SUBMIT: 'pod_submit',
   POD_SYNC: 'pod_sync',
+  REFRESH_FULFILLMENT: 'refresh_fulfillment',
 } as const;
 
 export const ORDERS_JOB_OPTIONS = {

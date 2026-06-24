@@ -47,6 +47,9 @@ export interface ShopifyOrderPayload {
   name: string; // e.g. "#1042"
   email?: string;
   phone?: string;
+  // Página de estado del pedido en Shopify (tracking + estado nativos para el
+  // cliente). Shopify la incluye en webhooks de orders y en GET /orders[/:id].json.
+  order_status_url?: string | null;
   currency: string;
   financial_status?: string;
   fulfillment_status?: string | null;

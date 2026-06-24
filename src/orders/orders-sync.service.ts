@@ -1,4 +1,5 @@
 import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
@@ -6,6 +7,9 @@ import { OrdersService } from './orders.service';
 
 const SYNC_LOCK_KEY = 'orders:sync:lock';
 const SYNC_LOCK_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Estados de fulfillment "terminales" — no hace falta reconciliarlos.
+const TERMINAL_FULFILLMENT = ['fulfilled', 'restocked'];
 
 @Injectable()
 export class OrdersSyncService {
@@ -50,6 +54,47 @@ export class OrdersSyncService {
       where: { type: { in: ['orders_manual', 'orders_cron'] } },
       orderBy: { startedAt: 'desc' },
     });
+  }
+
+  /**
+   * Reconciliador del fulfillment display status. Red de seguridad GARANTIZADA:
+   * Shopify no dispara webhooks fiables para todos los cambios de FulfillmentOrder
+   * (p.ej. holds merchant-managed solo mandan orders/updated, que sufre una carrera
+   * por consistencia eventual). Cada N minutos re-derivamos el estado de las órdenes
+   * activas desde Shopify, así el badge del cliente se pone al día solo sin resync.
+   * Reusa OrdersService.refreshFulfillmentDisplayStatus (que solo escribe si cambió).
+   */
+  @Cron('*/10 * * * *')
+  async reconcileFulfillmentDisplayStatus(): Promise<void> {
+    const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        shopifyCreatedAt: { gte: since },
+        OR: [
+          { fulfillmentDisplayStatus: null },
+          { fulfillmentDisplayStatus: { notIn: TERMINAL_FULFILLMENT } },
+        ],
+      },
+      select: { shopifyOrderId: true },
+      take: 250,
+    });
+    if (orders.length === 0) return;
+
+    for (const o of orders) {
+      try {
+        await this.ordersService.refreshFulfillmentDisplayStatus(
+          o.shopifyOrderId,
+          'cron_reconcile',
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Reconcile FO falló para ${o.shopifyOrderId}: ${(err as Error).message}`,
+        );
+      }
+    }
+    this.logger.log(
+      `Fulfillment reconcile: revisadas ${orders.length} órdenes activas`,
+    );
   }
 
   private async runBackfill(sinceIso: string, syncId: string): Promise<void> {

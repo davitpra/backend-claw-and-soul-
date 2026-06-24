@@ -11,6 +11,11 @@ interface IngestJobData {
   webhookId?: string;
 }
 
+interface RefreshFulfillmentJobData {
+  shopifyOrderId: string;
+  topic: string;
+}
+
 @Processor(ORDERS_QUEUE)
 export class OrdersIngestProcessor extends WorkerHost {
   private readonly logger = new Logger(OrdersIngestProcessor.name);
@@ -19,14 +24,27 @@ export class OrdersIngestProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<IngestJobData>): Promise<void> {
-    if (job.name !== ORDERS_JOB_NAMES.INGEST) return;
+  async process(
+    job: Job<IngestJobData | RefreshFulfillmentJobData>,
+  ): Promise<void> {
+    if (job.name === ORDERS_JOB_NAMES.INGEST) {
+      const { payload, topic, webhookId } = job.data as IngestJobData;
+      this.logger.log(
+        `Processing order ingest: ${payload.name} (${payload.id}) topic=${topic}`,
+      );
+      await this.ordersService.ingestShopifyOrder(payload, webhookId, topic);
+      return;
+    }
 
-    const { payload, topic, webhookId } = job.data;
-    this.logger.log(
-      `Processing order ingest: ${payload.name} (${payload.id}) topic=${topic}`,
-    );
+    if (job.name === ORDERS_JOB_NAMES.REFRESH_FULFILLMENT) {
+      const { shopifyOrderId, topic } = job.data as RefreshFulfillmentJobData;
+      await this.ordersService.refreshFulfillmentDisplayStatus(
+        shopifyOrderId,
+        topic,
+      );
+      return;
+    }
 
-    await this.ordersService.ingestShopifyOrder(payload, webhookId, topic);
+    // Otros nombres (pod_submit/pod_sync) los maneja PodProcessor.
   }
 }

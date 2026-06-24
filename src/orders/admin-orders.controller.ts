@@ -163,6 +163,16 @@ export class AdminOrdersController {
     return await this.podService.setPodFxRate(rate, user?.id);
   }
 
+  @Get('production/queue')
+  @ApiOperation({
+    summary: 'Production queue: active orders (FIFO) with their prints',
+  })
+  @ApiQuery({ name: 'method', required: false, type: String })
+  @ApiQuery({ name: 'q', required: false, type: String })
+  productionQueue(@Query('method') method?: string, @Query('q') q?: string) {
+    return this.adminOrdersService.listProductionQueue({ method, q });
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get order detail' })
   @ApiResponse({ status: 404, description: 'Order not found' })

@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PodProviderRegistry } from './pod-provider.registry';
 import { PICTOREM_CATALOG, PodCatalog } from './catalog/pictorem-catalog';
 import { FxRateService } from '../../fx/fx-rate.service';
+import { ShopifyApiService } from '../../shopify-sync/shopify-api.service';
 
 const DEFAULT_POD_PROVIDER = 'pictorem';
 const POD_ENABLED_KEY = 'orders_pod_enabled';
@@ -29,6 +30,7 @@ export class PodService {
     private readonly prisma: PrismaService,
     private readonly registry: PodProviderRegistry,
     private readonly fx: FxRateService,
+    private readonly shopifyApi: ShopifyApiService,
   ) {}
 
   /**
@@ -591,6 +593,9 @@ export class PodService {
         podProvider: true,
         productionStatus: true,
         trackingNumber: true,
+        shopifyLineItemId: true,
+        quantity: true,
+        order: { select: { shopifyOrderId: true } },
       },
     });
 
@@ -660,6 +665,45 @@ export class PodService {
             } as Prisma.InputJsonValue,
           },
         });
+      }
+
+      // Mirror the shipment back to Shopify so its fulfillmentStatus + tracking
+      // (and the customer's native Shopify shipment email) stay in sync. Fired
+      // only on the transition INTO "shipped". Best-effort: createFulfillment is
+      // idempotent, so a Shopify failure here is logged as a warning and simply
+      // retried on the next POD sync rather than breaking it.
+      if (result.status === 'shipped' && item.productionStatus !== 'shipped') {
+        try {
+          await this.shopifyApi.createFulfillment(
+            item.order.shopifyOrderId,
+            {
+              shopifyLineItemId: item.shopifyLineItemId,
+              quantity: item.quantity,
+            },
+            result.trackingNumber
+              ? {
+                  number: result.trackingNumber,
+                  company: result.trackingCarrier ?? undefined,
+                }
+              : undefined,
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.error(
+            `Shopify fulfillment failed for item ${orderItemId}: ${message}`,
+          );
+          await this.prisma.orderEvent.create({
+            data: {
+              orderId: item.orderId,
+              orderItemId,
+              eventType: 'warning',
+              source: 'pod',
+              payload: {
+                message: `Shopify fulfillment failed: ${message}`,
+              } as Prisma.InputJsonValue,
+            },
+          });
+        }
       }
 
       this.logger.log(

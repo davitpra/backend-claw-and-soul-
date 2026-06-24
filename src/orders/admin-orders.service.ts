@@ -6,6 +6,10 @@ import {
 } from '../common/utils/pagination.util';
 import { ExpensesService } from '../expenses/expenses.service';
 
+// Estados de producción terminales: el item ya no requiere trabajo del taller.
+// Una orden es "activa" (sale en la cola de producción) si tiene >=1 item NO terminal.
+const TERMINAL_PRODUCTION_STATUSES = ['delivered', 'cancelled', 'refunded'];
+
 @Injectable()
 export class AdminOrdersService {
   private readonly logger = new Logger(AdminOrdersService.name);
@@ -93,6 +97,66 @@ export class AdminOrdersService {
       page,
       limit,
     );
+  }
+
+  /**
+   * Cola de producción ("estudio de impresión"): órdenes activas (con >=1 print
+   * sin terminar) ordenadas FIFO (lo más viejo esperando primero). El frontend
+   * agrupa por etapa; aquí solo se devuelve la lista plana acotada.
+   */
+  async listProductionQueue(opts: { method?: string; q?: string } = {}) {
+    const where: Record<string, unknown> = {
+      items: {
+        some: {
+          productionStatus: { notIn: TERMINAL_PRODUCTION_STATUSES },
+          ...(opts.method ? { fulfillmentMethod: opts.method } : {}),
+        },
+      },
+    };
+
+    if (opts.q) {
+      where.OR = [
+        { orderNumber: { contains: opts.q, mode: 'insensitive' } },
+        { customerEmail: { contains: opts.q, mode: 'insensitive' } },
+        { customerName: { contains: opts.q, mode: 'insensitive' } },
+      ];
+    }
+
+    const orders = await this.prisma.order.findMany({
+      where,
+      orderBy: { shopifyCreatedAt: 'asc' },
+      take: 200,
+      select: {
+        id: true,
+        orderNumber: true,
+        customerName: true,
+        customerEmail: true,
+        userId: true,
+        shopifyCreatedAt: true,
+        financialStatus: true,
+        fulfillmentStatus: true,
+        fulfillmentDisplayStatus: true,
+        currency: true,
+        totalAmount: true,
+        items: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            title: true,
+            productionStatus: true,
+            fulfillmentMethod: true,
+            imageUrl: true,
+            generation: {
+              select: { resultUrl: true, thumbnailUrl: true },
+            },
+            podProvider: true,
+            podOrderId: true,
+          },
+        },
+      },
+    });
+
+    return orders.map((o) => ({ ...o, totalAmount: o.totalAmount.toNumber() }));
   }
 
   async getOrderDetail(id: string) {

@@ -31,12 +31,13 @@ export class UserOrdersService {
           currency: true,
           financialStatus: true,
           fulfillmentStatus: true,
+          fulfillmentDisplayStatus: true,
+          orderStatusUrl: true,
           shopifyCreatedAt: true,
           items: {
             select: {
               id: true,
               title: true,
-              productionStatus: true,
               imageUrl: true,
               generation: { select: { resultUrl: true, thumbnailUrl: true } },
             },
@@ -82,6 +83,8 @@ export class UserOrdersService {
         currency: true,
         financialStatus: true,
         fulfillmentStatus: true,
+        fulfillmentDisplayStatus: true,
+        orderStatusUrl: true,
         shippingAddress: true,
         customerNote: true,
         shopifyCreatedAt: true,
@@ -89,7 +92,6 @@ export class UserOrdersService {
           select: {
             id: true,
             title: true,
-            productionStatus: true,
             imageUrl: true,
             generation: { select: { resultUrl: true, thumbnailUrl: true } },
           },

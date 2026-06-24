@@ -427,6 +427,10 @@ model Order {
   customerPhone     String?   @map("customer_phone")
   financialStatus   String?   @map("financial_status") // paid | refunded | pending | voided
   fulfillmentStatus String?   @map("fulfillment_status") // unfulfilled | partial | fulfilled
+  // Estado de fulfillment "display" derivado de los FulfillmentOrders de Shopify
+  // (unfulfilled|in_progress|on_hold|scheduled|partially_fulfilled|fulfilled|restocked).
+  fulfillmentDisplayStatus String? @map("fulfillment_display_status")
+  orderStatusUrl    String?   @map("order_status_url") // Shopify order status page (envío/tracking del cliente)
   currency          String    @default("USD")
   subtotalAmount    Decimal   @map("subtotal_amount") @db.Decimal(10, 2)
   shippingAmount    Decimal?  @map("shipping_amount") @db.Decimal(10, 2)

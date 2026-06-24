@@ -12,6 +12,19 @@ const WEBHOOK_TOPICS = [
   'orders/updated',
   'orders/cancelled',
   'orders/fulfilled',
+  // FulfillmentOrders: los estados ricos (in_progress/on_hold/scheduled) cambian
+  // SIN disparar orders/*, así que escuchamos sus topics para recalcular el
+  // fulfillmentDisplayStatus de la orden afectada. (Nota: no existe un topic
+  // `fulfillments/create|update` en la Admin API; el fulfilled lo cubre
+  // orders/fulfilled y el partial lo cubre orders/updated.)
+  'fulfillment_orders/placed_on_hold',
+  'fulfillment_orders/hold_released',
+  'fulfillment_orders/fulfillment_request_submitted',
+  'fulfillment_orders/order_routing_complete',
+  'fulfillment_orders/scheduled_fulfillment_order_ready',
+  // Nota: `fulfillment_holds/*` y `fulfillments/*` NO se pueden registrar por la
+  // REST webhooks API (404/422). Los holds merchant-managed los pone al día el
+  // cron reconciliador de OrdersSyncService.
 ];
 const PAGE_SIZE = 250;
 const PAGE_DELAY_MS = 500;
@@ -185,6 +198,160 @@ export class ShopifyApiService {
       },
     );
     return createResponse.json();
+  }
+
+  /**
+   * Create a Shopify fulfillment (with optional tracking) for a single order
+   * line item, using the FulfillmentOrders flow required by Admin API 2024-01+
+   * (the legacy `POST /orders/{id}/fulfillments.json` was removed).
+   *
+   * Idempotent by construction: a line item that is already fully fulfilled has
+   * no fulfillable quantity left in its fulfillment order, so we skip it and
+   * return null instead of creating a duplicate. This makes it safe to call
+   * from the POD sync (which can re-run) and the manual admin paths alike.
+   *
+   * Requires the Admin token to have the `write_merchant_managed_fulfillment_orders`
+   * (a.k.a. `write_assigned_fulfillment_orders`) scope.
+   *
+   * @returns the created fulfillment object, or null when there was nothing to
+   *   fulfill (already fulfilled / line item not found).
+   */
+  async createFulfillment(
+    shopifyOrderId: string,
+    lineItem: { shopifyLineItemId: string; quantity: number },
+    tracking?: { number?: string; company?: string; url?: string },
+    opts: { notify?: boolean } = {},
+  ): Promise<unknown> {
+    // Step 1: list the order's fulfillment orders and locate the open
+    // fulfillment-order line that still has quantity left for our line item.
+    const foResponse = await this.fetchWithRetry(
+      `${this.baseUrl}/orders/${shopifyOrderId}/fulfillment_orders.json`,
+    );
+    const { fulfillment_orders: fulfillmentOrders = [] } =
+      (await foResponse.json()) as {
+        fulfillment_orders?: Array<{
+          id: number;
+          line_items: Array<{
+            id: number;
+            line_item_id: number;
+            fulfillable_quantity: number;
+          }>;
+        }>;
+      };
+
+    const targetLineItemId = Number(lineItem.shopifyLineItemId);
+    for (const fo of fulfillmentOrders) {
+      const foLine = fo.line_items.find(
+        (li) =>
+          li.line_item_id === targetLineItemId && li.fulfillable_quantity > 0,
+      );
+      if (!foLine) continue;
+
+      const quantity = Math.min(lineItem.quantity, foLine.fulfillable_quantity);
+
+      // Step 2: create the fulfillment for just this fulfillment-order line.
+      const response = await this.postJson(
+        `${this.baseUrl}/fulfillments.json`,
+        {
+          fulfillment: {
+            notify_customer: opts.notify ?? true,
+            line_items_by_fulfillment_order: [
+              {
+                fulfillment_order_id: fo.id,
+                fulfillment_order_line_items: [{ id: foLine.id, quantity }],
+              },
+            ],
+            ...(tracking?.number
+              ? {
+                  tracking_info: {
+                    number: tracking.number,
+                    company: tracking.company ?? null,
+                    url: tracking.url ?? null,
+                  },
+                }
+              : {}),
+          },
+        },
+      );
+
+      const json = (await response.json()) as { fulfillment?: unknown };
+      this.logger.log(
+        `Shopify fulfillment created: order=${shopifyOrderId} line=${targetLineItemId} qty=${quantity} tracking=${tracking?.number ?? 'none'}`,
+      );
+      return json.fulfillment ?? null;
+    }
+
+    this.logger.debug(
+      `No open fulfillment order for line ${targetLineItemId} on order ${shopifyOrderId}; nothing to fulfill`,
+    );
+    return null;
+  }
+
+  /**
+   * Resuelve el estado de fulfillment "display" de un pedido (lo que el cliente
+   * ve en su badge), fiel a Shopify. El `fulfillment_status` simple de la orden
+   * solo tiene unfulfilled/partial/fulfilled/restocked; los estados ricos que el
+   * admin de Shopify muestra (in_progress, on_hold, scheduled) viven en los
+   * FulfillmentOrders, así que los traemos de `GET fulfillment_orders.json` y los
+   * agregamos a un único estado por orden. Best-effort: si la llamada falla,
+   * caemos al `fulfillment_status` simple.
+   */
+  async getFulfillmentDisplayStatus(
+    shopifyOrderId: string,
+    orderFulfillmentStatus?: string | null,
+  ): Promise<string | null> {
+    // El restock (cancelación/refund) lo refleja directo el estado de la orden.
+    if (orderFulfillmentStatus === 'restocked') return 'restocked';
+
+    let foStatuses: string[] = [];
+    try {
+      const res = await this.fetchWithRetry(
+        `${this.baseUrl}/orders/${shopifyOrderId}/fulfillment_orders.json`,
+      );
+      const { fulfillment_orders: fos = [] } = (await res.json()) as {
+        fulfillment_orders?: Array<{ status: string }>;
+      };
+      foStatuses = fos.map((f) => f.status);
+    } catch {
+      this.logger.warn(
+        `Could not fetch fulfillment_orders for order ${shopifyOrderId}; usando fulfillment_status simple`,
+      );
+    }
+
+    return this.deriveFulfillmentDisplayStatus(
+      foStatuses,
+      orderFulfillmentStatus ?? null,
+    );
+  }
+
+  /**
+   * Agrega los estados de los FulfillmentOrders a un único estado por orden.
+   * Devuelve uno de: unfulfilled | in_progress | on_hold | scheduled |
+   * partially_fulfilled | fulfilled | restocked.
+   */
+  private deriveFulfillmentDisplayStatus(
+    foStatuses: string[],
+    orderStatus: string | null,
+  ): string {
+    // Sin FulfillmentOrders (raro): caemos al fulfillment_status simple.
+    if (foStatuses.length === 0) {
+      if (orderStatus === 'fulfilled') return 'fulfilled';
+      if (orderStatus === 'partial') return 'partially_fulfilled';
+      if (orderStatus === 'restocked') return 'restocked';
+      return 'unfulfilled';
+    }
+
+    // cancelled/incomplete no cuentan para el estado activo del pedido.
+    const active = foStatuses.filter(
+      (s) => s !== 'cancelled' && s !== 'incomplete',
+    );
+    if (active.length === 0) return 'unfulfilled';
+    if (active.includes('on_hold')) return 'on_hold';
+    if (active.includes('scheduled')) return 'scheduled';
+    if (active.every((s) => s === 'closed')) return 'fulfilled';
+    if (active.includes('closed')) return 'partially_fulfilled';
+    if (active.includes('in_progress')) return 'in_progress';
+    return 'unfulfilled'; // todos open
   }
 
   /** POST helper for Admin write calls. Throws with the Shopify body on failure. */

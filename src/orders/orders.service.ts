@@ -82,6 +82,15 @@ export class OrdersService {
 
     const shippingTotal = payload.total_shipping_price_set?.shop_money?.amount;
 
+    // Estado de fulfillment "display" (lo que ve el cliente), fiel a Shopify:
+    // se deriva de los FulfillmentOrders (in_progress/on_hold/scheduled/...), que
+    // el fulfillment_status simple del payload no expone. Best-effort.
+    const fulfillmentDisplayStatus =
+      await this.shopifyApiService.getFulfillmentDisplayStatus(
+        shopifyOrderId,
+        payload.fulfillment_status ?? null,
+      );
+
     // Upsert the Order row
     const order = await this.prisma.order.upsert({
       where: { shopifyOrderId },
@@ -98,6 +107,8 @@ export class OrdersService {
         customerPhone: payload.phone ?? payload.customer?.phone ?? null,
         financialStatus: payload.financial_status ?? null,
         fulfillmentStatus: payload.fulfillment_status ?? null,
+        fulfillmentDisplayStatus,
+        orderStatusUrl: payload.order_status_url ?? null,
         currency: payload.currency,
         subtotalAmount: new Prisma.Decimal(payload.subtotal_price),
         shippingAmount: shippingTotal
@@ -124,6 +135,8 @@ export class OrdersService {
         customerEmail: payload.email ?? undefined,
         financialStatus: payload.financial_status ?? undefined,
         fulfillmentStatus: payload.fulfillment_status ?? undefined,
+        fulfillmentDisplayStatus: fulfillmentDisplayStatus ?? undefined,
+        orderStatusUrl: payload.order_status_url ?? undefined,
         subtotalAmount: new Prisma.Decimal(payload.subtotal_price),
         shippingAmount: shippingTotal
           ? new Prisma.Decimal(shippingTotal)
@@ -312,6 +325,62 @@ export class OrdersService {
       default:
         return 'paid';
     }
+  }
+
+  /**
+   * Recalcula el fulfillment "display status" de una orden a partir de sus
+   * FulfillmentOrders en Shopify y lo persiste. Lo disparan los webhooks
+   * `fulfillment_orders/*` y `fulfillments/*`, cuyas transiciones (in_progress,
+   * on_hold, scheduled) NO se reflejan en los webhooks `orders/*` — por eso sin
+   * esto el badge del cliente quedaba congelado hasta un resync manual.
+   */
+  async refreshFulfillmentDisplayStatus(
+    shopifyOrderId: string,
+    topic?: string,
+  ): Promise<void> {
+    const order = await this.prisma.order.findUnique({
+      where: { shopifyOrderId },
+      select: {
+        id: true,
+        fulfillmentStatus: true,
+        fulfillmentDisplayStatus: true,
+      },
+    });
+    if (!order) {
+      // El webhook de FulfillmentOrder llegó antes de que la orden se ingestara;
+      // orders/create (o un evento posterior) la pondrá al día.
+      this.logger.warn(
+        `refreshFulfillmentDisplayStatus: order ${shopifyOrderId} aún no existe; skip`,
+      );
+      return;
+    }
+
+    const display = await this.shopifyApiService.getFulfillmentDisplayStatus(
+      shopifyOrderId,
+      order.fulfillmentStatus,
+    );
+
+    if (display === order.fulfillmentDisplayStatus) return; // sin cambios
+
+    await this.prisma.order.update({
+      where: { id: order.id },
+      data: { fulfillmentDisplayStatus: display },
+    });
+
+    await this.prisma.orderEvent.create({
+      data: {
+        orderId: order.id,
+        eventType: 'fulfillment_refresh',
+        source: 'webhook',
+        fromStatus: order.fulfillmentDisplayStatus,
+        toStatus: display,
+        payload: { topic: topic ?? null } as Prisma.InputJsonValue,
+      },
+    });
+
+    this.logger.log(
+      `Fulfillment display refresh: order=${shopifyOrderId} ${order.fulfillmentDisplayStatus ?? 'null'} → ${display ?? 'null'} (topic=${topic ?? 'n/a'})`,
+    );
   }
 
   async transitionItemStatus(
@@ -519,6 +588,7 @@ export class OrdersService {
   ): Promise<void> {
     const item = await this.prisma.orderItem.findFirst({
       where: { id: itemId, orderId },
+      include: { order: { select: { shopifyOrderId: true } } },
     });
     if (!item) throw new NotFoundException('Order item not found');
 
@@ -548,6 +618,44 @@ export class OrdersService {
         payload: tracking as unknown as Prisma.InputJsonValue,
       },
     });
+
+    // When entering tracking ships the item, mirror it to Shopify with the
+    // tracking info so its fulfillmentStatus and the customer's native Shopify
+    // shipment email stay in sync. Best-effort + idempotent: a Shopify failure
+    // must not undo the tracking we just saved.
+    if (shouldShip) {
+      try {
+        await this.shopifyApiService.createFulfillment(
+          item.order.shopifyOrderId,
+          {
+            shopifyLineItemId: item.shopifyLineItemId,
+            quantity: item.quantity,
+          },
+          {
+            number: tracking.trackingNumber,
+            company: tracking.trackingCarrier,
+            url: tracking.trackingUrl,
+          },
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error(
+          `Shopify fulfillment failed for item ${itemId}: ${message}`,
+        );
+        await this.prisma.orderEvent.create({
+          data: {
+            orderId,
+            orderItemId: itemId,
+            eventType: 'warning',
+            source: 'admin',
+            userId: adminUserId ?? null,
+            payload: {
+              message: `Shopify fulfillment failed: ${message}`,
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
+    }
   }
 
   async updateItemFulfillmentMethod(

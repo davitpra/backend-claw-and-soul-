@@ -24,7 +24,11 @@ export class ShopifyOrdersWebhookController {
       (req.body as Buffer).toString('utf8'),
     ) as ShopifyOrderPayload;
     const webhookId = req.headers['x-shopify-webhook-id'] as string | undefined;
-    const jobId = `order:${payload.id}:${topic}:${webhookId ?? Date.now()}`;
+    // BullMQ forbids ":" in custom job ids; the topic also carries a "/"
+    // (e.g. "orders/create"). Normalize both to "-" while preserving the
+    // order+topic+webhookId dedup key for idempotent ingestion.
+    const safeTopic = topic.replace(/\//g, '-');
+    const jobId = `order-${payload.id}-${safeTopic}-${webhookId ?? Date.now()}`;
 
     await this.ordersQueue.add(
       ORDERS_JOB_NAMES.INGEST,

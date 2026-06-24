@@ -44,7 +44,5 @@ export class OrdersIngestProcessor extends WorkerHost {
       );
       return;
     }
-
-    // Otros nombres (pod_submit/pod_sync) los maneja PodProcessor.
   }
 }

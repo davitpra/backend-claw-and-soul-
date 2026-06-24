@@ -158,8 +158,6 @@ export class AdminOrdersService {
             generation: {
               select: { resultUrl: true, thumbnailUrl: true },
             },
-            podProvider: true,
-            podOrderId: true,
           },
         },
       },

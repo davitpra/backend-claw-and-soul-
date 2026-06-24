@@ -4,20 +4,12 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
-import { PodProviderRegistry } from './pod/pod-provider.registry';
 import { ShopifyOrderPayload } from './dto/shopify-order.dto';
 import { Prisma } from '@prisma/client';
-import {
-  ORDERS_QUEUE,
-  ORDERS_JOB_NAMES,
-  ORDERS_JOB_OPTIONS,
-} from './constants/queues.constants';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['in_production', 'cancelled', 'refunded'],
@@ -34,8 +26,6 @@ const CANCELLABLE_STATUSES = ['pending', 'paid', 'in_production'];
 /** Terminal/non-active states — an order is fully cancelled when none remain outside these. */
 const INACTIVE_STATUSES = ['cancelled', 'refunded'];
 
-const DEFAULT_POD_PROVIDER = 'pictorem';
-
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -44,8 +34,6 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly shopifyApiService: ShopifyApiService,
-    private readonly podRegistry: PodProviderRegistry,
-    @InjectQueue(ORDERS_QUEUE) private readonly ordersQueue: Queue,
   ) {}
 
   async ingestShopifyOrder(
@@ -170,10 +158,8 @@ export class OrdersService {
       },
     });
 
-    // Auto-submit POD items for paid orders
-    if (payload.financial_status === 'paid') {
-      await this.enqueuePodItems(order.id);
-    }
+    // El POD se gestiona fuera de la aplicación: los items pagados quedan en
+    // 'paid' y el admin avanza su estado de producción manualmente.
 
     this.logger.log(
       `Ingested order ${payload.name} (${shopifyOrderId}) → DB id ${order.id}`,
@@ -520,21 +506,9 @@ export class OrdersService {
       );
     }
 
-    // 2) Pictorem — best-effort: collect warnings, never abort.
+    // 2) El POD se gestiona fuera de la aplicación; no hay acción automática
+    //    de cancelación en el proveedor. Sin advertencias generadas aquí.
     const warnings: string[] = [];
-    for (const item of targets) {
-      if (item.fulfillmentMethod === 'pod' && item.podOrderId) {
-        const providerName = item.podProvider ?? DEFAULT_POD_PROVIDER;
-        try {
-          await this.podRegistry.get(providerName).cancel(item.podOrderId);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          warnings.push(
-            `"${item.title}" ya fue enviado a ${providerName} (#${item.podOrderId}): elimina el presupuesto (remove quote) en el panel de Pictorem. El siguiente sync lo detectará y marcará el item como cancelado. (${message})`,
-          );
-        }
-      }
-    }
 
     // 3) DB — atomic: mark items cancelled, set cancelledAt if whole order, audit.
     const now = new Date();
@@ -784,26 +758,5 @@ export class OrdersService {
     });
 
     return { printImageUrl: url };
-  }
-
-  /** Enqueue POD_SUBMIT for all pod items in an order that haven't been submitted yet. */
-  async enqueuePodItems(orderId: string): Promise<void> {
-    const items = await this.prisma.orderItem.findMany({
-      where: {
-        orderId,
-        fulfillmentMethod: 'pod',
-        podOrderId: null,
-      },
-      select: { id: true },
-    });
-
-    for (const item of items) {
-      await this.ordersQueue.add(
-        ORDERS_JOB_NAMES.POD_SUBMIT,
-        { orderItemId: item.id },
-        ORDERS_JOB_OPTIONS,
-      );
-      this.logger.log(`Enqueued POD_SUBMIT for item ${item.id}`);
-    }
   }
 }

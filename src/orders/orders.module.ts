@@ -11,18 +11,11 @@ import { OrdersController } from './orders.controller';
 import { ShopifyOrdersWebhookController } from './shopify-orders-webhook.controller';
 import { ShopifyFulfillmentOrderWebhookController } from './shopify-fulfillment-webhook.controller';
 import { OrdersIngestProcessor } from './processors/orders-ingest.processor';
-import { PodProcessor } from './processors/pod.processor';
-import { PodService } from './pod/pod.service';
-import { PodSyncService } from './pod/pod-sync.service';
-import { PictoremProvider } from './pod/providers/pictorem.provider';
-import { PodProviderRegistry } from './pod/pod-provider.registry';
-import { POD_PROVIDERS } from './pod/pod-provider.tokens';
 import { ShopifyHmacGuard } from '../common/guards/shopify-hmac.guard';
 import { ShopifySyncModule } from '../shopify-sync/shopify-sync.module';
 import { GenerationsModule } from '../generations/generations.module';
 import { ImageEnhancementService } from './image-enhancement.service';
 import { ExpensesModule } from '../expenses/expenses.module';
-import { FxModule } from '../fx/fx.module';
 
 @Module({
   imports: [
@@ -30,7 +23,6 @@ import { FxModule } from '../fx/fx.module';
     ShopifySyncModule,
     GenerationsModule,
     ExpensesModule,
-    FxModule,
   ],
   controllers: [
     ShopifyOrdersWebhookController,
@@ -44,19 +36,9 @@ import { FxModule } from '../fx/fx.module';
     AdminOrdersService,
     UserOrdersService,
     OrdersIngestProcessor,
-    PodProcessor,
-    PodService,
-    PodSyncService,
-    PictoremProvider,
-    {
-      provide: POD_PROVIDERS,
-      useFactory: (pictorem: PictoremProvider) => [pictorem],
-      inject: [PictoremProvider],
-    },
-    PodProviderRegistry,
     ShopifyHmacGuard,
     ImageEnhancementService,
   ],
-  exports: [OrdersService, AdminOrdersService, PodService],
+  exports: [OrdersService, AdminOrdersService],
 })
 export class OrdersModule {}

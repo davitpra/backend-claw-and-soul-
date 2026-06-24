@@ -33,16 +33,9 @@ import { AdminOrdersService } from './admin-orders.service';
 import { OrdersService } from './orders.service';
 import { OrdersSyncService } from './orders-sync.service';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
-import { PodService } from './pod/pod.service';
 import { ImageEnhancementService } from './image-enhancement.service';
 import { EnhanceDto } from './dto/enhance.dto';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
-import {
-  ORDERS_QUEUE,
-  ORDERS_JOB_NAMES,
-  ORDERS_JOB_OPTIONS,
-} from './constants/queues.constants';
+import { PICTOREM_CATALOG } from './pod/catalog/pictorem-catalog';
 
 @ApiTags('admin-orders')
 @ApiBearerAuth()
@@ -55,9 +48,7 @@ export class AdminOrdersController {
     private readonly ordersService: OrdersService,
     private readonly ordersSyncService: OrdersSyncService,
     private readonly shopifyApiService: ShopifyApiService,
-    private readonly podService: PodService,
     private readonly imageEnhancementService: ImageEnhancementService,
-    @InjectQueue(ORDERS_QUEUE) private readonly ordersQueue: Queue,
   ) {}
 
   @Get()
@@ -109,61 +100,19 @@ export class AdminOrdersController {
     return this.ordersSyncService.triggerBackfill(since);
   }
 
-  @Get('pod/health')
+  @Get('pod/catalog')
   @ApiOperation({
-    summary: 'Test connectivity for all registered POD providers',
+    summary:
+      'Catálogo estático de impresión (materiales, tipos, tamaños, opciones) para configurar variantes',
   })
-  async podHealth() {
-    return this.podService.testConnection();
+  podCatalog() {
+    return PICTOREM_CATALOG;
   }
 
   @Get('pod/providers')
-  @ApiOperation({ summary: 'List available POD provider names' })
+  @ApiOperation({ summary: 'Lista de proveedores de impresión disponibles' })
   podProviders() {
-    return { providers: this.podService.listProviders() };
-  }
-
-  @Get('pod/catalog')
-  @ApiOperation({
-    summary: 'Get Pictorem product catalog (materials, types, sizes, options)',
-  })
-  podCatalog() {
-    return this.podService.getCatalog();
-  }
-
-  @Get('pod/settings')
-  @ApiOperation({ summary: 'Get current POD auto-fulfillment enabled state' })
-  async podSettingsGet() {
-    return await this.podService.getPodEnabled();
-  }
-
-  @Patch('pod/settings')
-  @ApiOperation({
-    summary: 'Enable or disable POD auto-fulfillment at runtime',
-  })
-  async podSettingsPatch(
-    @Body('enabled') enabled: boolean,
-    @CurrentUser() user?: { id: string },
-  ) {
-    return await this.podService.setPodEnabled(enabled, user?.id);
-  }
-
-  @Get('pod/fx-rate')
-  @ApiOperation({ summary: 'Get the fixed Pictorem USD→CAD invoicing rate' })
-  async podFxRateGet() {
-    return await this.podService.getPodFxRate();
-  }
-
-  @Patch('pod/fx-rate')
-  @ApiOperation({
-    summary:
-      'Set the fixed Pictorem USD→CAD invoicing rate (recalibrate from a real invoice)',
-  })
-  async podFxRatePatch(
-    @Body('rate') rate: number,
-    @CurrentUser() user?: { id: string },
-  ) {
-    return await this.podService.setPodFxRate(rate, user?.id);
+    return { providers: ['pictorem'] };
   }
 
   @Get('production/queue')
@@ -299,63 +248,6 @@ export class AdminOrdersController {
       itemId,
       generationId,
     );
-  }
-
-  @Post(':id/items/:itemId/pod/submit')
-  @HttpCode(HttpStatus.ACCEPTED)
-  @ApiOperation({
-    summary:
-      'Enqueue POD submission (or re-submit) for an order item to Pictorem',
-  })
-  async podSubmit(
-    @Param('itemId') itemId: string,
-    @Body('force') force?: boolean,
-  ) {
-    await this.ordersQueue.add(
-      ORDERS_JOB_NAMES.POD_SUBMIT,
-      { orderItemId: itemId, force: force ?? false, manual: true },
-      ORDERS_JOB_OPTIONS,
-    );
-    return { ok: true, queued: true, orderItemId: itemId };
-  }
-
-  @Post(':id/items/:itemId/pod/sync')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary:
-      'Immediately sync POD status + tracking for an order item from Pictorem',
-  })
-  async podSync(@Param('itemId') itemId: string) {
-    await this.podService.syncItem(itemId);
-    return { ok: true, orderItemId: itemId };
-  }
-
-  @Get(':id/items/:itemId/pod/price')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Quote the POD provider (Pictorem) reseller price for an item',
-  })
-  podPrice(@Param('itemId') itemId: string) {
-    return this.podService.getItemPrice(itemId);
-  }
-
-  @Get(':id/items/:itemId/pod/leadtime')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Consultar el lead time de producción (Pictorem) de un item',
-  })
-  podLeadTime(@Param('itemId') itemId: string) {
-    return this.podService.getItemLeadTime(itemId);
-  }
-
-  @Get(':id/production-cost/estimate')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary:
-      'Estimate total production cost from POD provider for all POD items in an order',
-  })
-  estimateProductionCost(@Param('id') id: string) {
-    return this.podService.estimateOrderProductionCost(id);
   }
 
   @Patch(':id/production-cost')

@@ -177,10 +177,29 @@ export class AdminOrdersService {
                 name: true,
                 displayName: true,
                 fulfillmentMethod: true,
+                shopifyHandle: true,
+                images: {
+                  orderBy: [{ isPrimary: 'desc' }, { orderIndex: 'asc' }],
+                  take: 1,
+                  select: { imageUrl: true },
+                },
+                style: {
+                  select: {
+                    images: {
+                      orderBy: [{ isPrimary: 'desc' }, { orderIndex: 'asc' }],
+                      take: 1,
+                      select: { imageUrl: true },
+                    },
+                  },
+                },
               },
             },
             productVariant: {
-              select: { id: true, shopifyVariantTitle: true },
+              select: {
+                id: true,
+                shopifyVariantId: true,
+                shopifyVariantTitle: true,
+              },
             },
             generation: {
               select: {

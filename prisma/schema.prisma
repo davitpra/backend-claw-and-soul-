@@ -489,9 +489,6 @@ model OrderItem {
   size                   String?
   fulfillmentMethod      String    @default("in_house") @map("fulfillment_method") // in_house | pod
   productionStatus       String    @default("draft") @map("production_status") // pending | generating | art_failed | draft | pre_production | in_production | printed | shipped | delivered | on_hold | cancelled | refunded | restocked
-  trackingNumber         String?   @map("tracking_number")
-  trackingUrl            String?   @map("tracking_url")
-  trackingCarrier        String?   @map("tracking_carrier")
   notes                  String?
   shippedAt              DateTime? @map("shipped_at")
   deliveredAt            DateTime? @map("delivered_at")
@@ -517,7 +514,7 @@ model OrderEvent {
   id          String   @id @default(uuid())
   orderId     String   @map("order_id")
   orderItemId String?  @map("order_item_id")
-  eventType   String   @map("event_type") // status_change | tracking_added | webhook_received | manual_resync | pod_submit | pod_skip | warning
+  eventType   String   @map("event_type") // status_change | webhook_received | manual_resync | pod_submit | pod_skip | warning
   fromStatus  String?  @map("from_status")
   toStatus    String?  @map("to_status")
   payload     Json?

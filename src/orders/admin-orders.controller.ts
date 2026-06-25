@@ -170,24 +170,6 @@ export class AdminOrdersController {
     );
   }
 
-  @Patch(':id/items/:itemId/tracking')
-  @ApiOperation({ summary: 'Set tracking info for an order item' })
-  updateTracking(
-    @Param('id') orderId: string,
-    @Param('itemId') itemId: string,
-    @Body('trackingNumber') trackingNumber: string,
-    @Body('trackingUrl') trackingUrl?: string,
-    @Body('trackingCarrier') trackingCarrier?: string,
-    @CurrentUser() user?: { id: string },
-  ) {
-    return this.ordersService.updateItemTracking(
-      orderId,
-      itemId,
-      { trackingNumber, trackingUrl, trackingCarrier },
-      user?.id,
-    );
-  }
-
   @Post(':id/resync')
   @ApiOperation({ summary: 'Re-sync a single order from Shopify' })
   async resync(@Param('id') id: string) {

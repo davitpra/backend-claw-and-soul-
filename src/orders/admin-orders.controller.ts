@@ -224,11 +224,31 @@ export class AdminOrdersController {
     @Param('id') orderId: string,
     @Param('itemId') itemId: string,
     @Body('generationId') generationId: string,
+    @CurrentUser() user?: { id: string },
   ) {
     return this.ordersService.linkGenerationToItem(
       orderId,
       itemId,
       generationId,
+      user?.id,
+    );
+  }
+
+  @Post(':id/items/:itemId/unlink-generation')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Unlink the generation from an order item (does not delete the generation)',
+  })
+  unlinkGeneration(
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @CurrentUser() user?: { id: string },
+  ) {
+    return this.ordersService.unlinkGenerationFromItem(
+      orderId,
+      itemId,
+      user?.id,
     );
   }
 
@@ -276,6 +296,47 @@ export class AdminOrdersController {
       );
     }
     return this.ordersService.updateItemPrintImage(
+      orderId,
+      itemId,
+      file,
+      user?.id,
+    );
+  }
+
+  @Post(':id/items/:itemId/generation-image')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @ApiOperation({
+    summary: "Overwrite the linked customer generation's image for an item",
+  })
+  @ApiResponse({ status: 201, description: 'Generation image replaced' })
+  uploadGenerationImage(
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user?: { id: string },
+  ) {
+    if (!file) throw new BadRequestException('No file provided');
+    if (!file.mimetype.startsWith('image/'))
+      throw new BadRequestException('File must be an image');
+    // Cloudinary (plan gratuito) rechaza imágenes de más de 10 MB. Validamos
+    // aquí para devolver un mensaje claro en vez de un 500 genérico.
+    const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    if (file.size > MAX_IMAGE_BYTES) {
+      const mb = (file.size / 1024 / 1024).toFixed(1);
+      throw new BadRequestException(
+        `La imagen pesa ${mb} MB y supera el máximo de 10 MB. ` +
+          `Súbela como JPEG o reduce su tamaño antes de reemplazarla.`,
+      );
+    }
+    return this.ordersService.replaceItemGenerationImage(
       orderId,
       itemId,
       file,

@@ -592,18 +592,129 @@ export class OrdersService {
     orderId: string,
     itemId: string,
     generationId: string,
+    adminUserId?: string,
   ): Promise<void> {
-    const [item, gen] = await Promise.all([
+    const [order, item, gen] = await Promise.all([
+      this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: { userId: true },
+      }),
       this.prisma.orderItem.findFirst({ where: { id: itemId, orderId } }),
       this.prisma.generation.findUnique({ where: { id: generationId } }),
     ]);
+    if (!order) throw new NotFoundException('Order not found');
     if (!item) throw new NotFoundException('Order item not found');
     if (!gen) throw new NotFoundException('Generation not found');
+    // Si el pedido tiene cliente, la generación debe pertenecerle.
+    if (order.userId && gen.userId !== order.userId) {
+      throw new BadRequestException(
+        'La generación no pertenece al cliente del pedido',
+      );
+    }
 
+    const previousGenerationId = item.generationId;
     await this.prisma.orderItem.update({
       where: { id: itemId },
       data: { generationId },
     });
+
+    await this.prisma.orderEvent.create({
+      data: {
+        orderId,
+        orderItemId: itemId,
+        eventType: 'manual_link_generation',
+        source: 'admin',
+        userId: adminUserId ?? null,
+        payload: {
+          generationId,
+          previousGenerationId,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  async unlinkGenerationFromItem(
+    orderId: string,
+    itemId: string,
+    adminUserId?: string,
+  ): Promise<void> {
+    const item = await this.prisma.orderItem.findFirst({
+      where: { id: itemId, orderId },
+    });
+    if (!item) throw new NotFoundException('Order item not found');
+
+    await this.prisma.orderItem.update({
+      where: { id: itemId },
+      data: { generationId: null },
+    });
+
+    await this.prisma.orderEvent.create({
+      data: {
+        orderId,
+        orderItemId: itemId,
+        eventType: 'generation_unlinked',
+        source: 'admin',
+        userId: adminUserId ?? null,
+        payload: {
+          previousGenerationId: item.generationId,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  async replaceItemGenerationImage(
+    orderId: string,
+    itemId: string,
+    file: Express.Multer.File,
+    adminUserId?: string,
+  ): Promise<{ resultUrl: string; thumbnailUrl: string }> {
+    const item = await this.prisma.orderItem.findFirst({
+      where: { id: itemId, orderId },
+      include: { generation: true },
+    });
+    if (!item) throw new NotFoundException('Order item not found');
+    if (!item.generationId || !item.generation) {
+      throw new BadRequestException(
+        'Este item no tiene una generación vinculada. Vincula una generación ' +
+          'antes de reemplazar su imagen.',
+      );
+    }
+
+    // Subir PRIMERO con una clave única (fuerza cache-bust del CDN). Si la
+    // subida falla, la imagen anterior permanece intacta.
+    const key = `generations/${item.generationId}/admin-replace/${uuidv4()}`;
+    const url = await this.storageService.upload(
+      key,
+      file.buffer,
+      file.mimetype,
+    );
+
+    // Subida correcta: limpiamos el asset previo si la clave difiere.
+    const oldKey = item.generation.resultStorageKey;
+    if (oldKey && oldKey !== key) {
+      await this.storageService.delete(oldKey).catch(() => null);
+    }
+
+    await this.prisma.generation.update({
+      where: { id: item.generationId },
+      data: { resultUrl: url, thumbnailUrl: url, resultStorageKey: key },
+    });
+
+    await this.prisma.orderEvent.create({
+      data: {
+        orderId,
+        orderItemId: itemId,
+        eventType: 'generation_image_replaced',
+        source: 'admin',
+        userId: adminUserId ?? null,
+        payload: {
+          generationId: item.generationId,
+          resultUrl: url,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return { resultUrl: url, thumbnailUrl: url };
   }
 
   async updateItemPrintImage(

@@ -17,6 +17,10 @@ import {
 } from '../common/utils/pagination.util';
 import { QUEUE_NAMES, JOB_NAMES } from './constants/queues.constants';
 import { ExpensesService } from '../expenses/expenses.service';
+import {
+  computeAutoEarlyStatus,
+  EARLY_AUTO_STATUSES,
+} from '../orders/production-status.util';
 
 @Injectable()
 export class GenerationsService {
@@ -309,7 +313,49 @@ export class GenerationsService {
       );
     });
 
+    await this.syncLinkedOrderItems(generationId, 'completed');
+
     return updated;
+  }
+
+  /**
+   * Tras un cambio de estado de la generación, recomputa el `productionStatus`
+   * de los OrderItem enlazados que sigan en un estado temprano auto-gestionado
+   * (pago + arte). No pisa items que el admin ya avanzó manualmente. Best-effort:
+   * un fallo aquí no debe romper la finalización de la generación.
+   */
+  private async syncLinkedOrderItems(
+    generationId: string,
+    generationStatus: string,
+  ): Promise<void> {
+    try {
+      const items = await this.prisma.orderItem.findMany({
+        where: {
+          generationId,
+          productionStatus: { in: EARLY_AUTO_STATUSES },
+        },
+        select: {
+          id: true,
+          productionStatus: true,
+          order: { select: { financialStatus: true } },
+        },
+      });
+      for (const item of items) {
+        const next = computeAutoEarlyStatus(
+          item.order.financialStatus,
+          generationStatus,
+        );
+        if (next === item.productionStatus) continue;
+        await this.prisma.orderItem.update({
+          where: { id: item.id },
+          data: { productionStatus: next },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to sync order items for generation ${generationId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   private validateUserSelections(
@@ -375,12 +421,16 @@ export class GenerationsService {
   }
 
   async markFailed(generationId: string, errorMessage: string) {
-    return this.prisma.generation.update({
+    const updated = await this.prisma.generation.update({
       where: { id: generationId },
       data: {
         status: 'failed',
         errorMessage,
       },
     });
+
+    await this.syncLinkedOrderItems(generationId, 'failed');
+
+    return updated;
   }
 }

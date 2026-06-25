@@ -10,21 +10,13 @@ import { StorageService } from '../storage/storage.service';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
 import { ShopifyOrderPayload } from './dto/shopify-order.dto';
 import { Prisma } from '@prisma/client';
-
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  pending: ['in_production', 'cancelled', 'refunded'],
-  paid: ['in_production', 'cancelled', 'refunded'],
-  in_production: ['shipped', 'cancelled', 'refunded'],
-  shipped: ['delivered', 'refunded'],
-  delivered: ['refunded'],
-  cancelled: [],
-  refunded: [],
-};
-
-/** Production states from which an item can still be cancelled (not yet shipped). */
-const CANCELLABLE_STATUSES = ['pending', 'paid', 'in_production'];
-/** Terminal/non-active states — an order is fully cancelled when none remain outside these. */
-const INACTIVE_STATUSES = ['cancelled', 'refunded'];
+import {
+  VALID_TRANSITIONS,
+  CANCELLABLE_STATUSES,
+  TERMINAL_STATUSES as INACTIVE_STATUSES,
+  computeAutoEarlyStatus,
+  isEarlyAutoStatus,
+} from './production-status.util';
 
 @Injectable()
 export class OrdersService {
@@ -158,8 +150,9 @@ export class OrdersService {
       },
     });
 
-    // El POD se gestiona fuera de la aplicación: los items pagados quedan en
-    // 'paid' y el admin avanza su estado de producción manualmente.
+    // El POD se gestiona fuera de la aplicación: el estado inicial se auto-asigna
+    // desde pago + generación (pending/generating/art_failed/draft) y, a partir de
+    // 'draft', el admin avanza la producción manualmente.
 
     this.logger.log(
       `Ingested order ${payload.name} (${shopifyOrderId}) → DB id ${order.id}`,
@@ -218,13 +211,15 @@ export class OrdersService {
 
     // Validate generationId ownership
     let generationId: string | null = null;
+    let generationStatus: string | null = null;
     if (generationIdAttr) {
       const gen = await this.prisma.generation.findUnique({
         where: { id: generationIdAttr },
-        select: { id: true },
+        select: { id: true, status: true },
       });
       if (gen) {
         generationId = gen.id;
+        generationStatus = gen.status;
       } else {
         this.logger.warn(
           `generation_id "${generationIdAttr}" not found in DB — skipping link`,
@@ -232,8 +227,8 @@ export class OrdersService {
       }
     }
 
-    // Initial production status from financial status (only set on create)
-    const initialStatus = this.financialToProductionStatus(financialStatus);
+    // Estado inicial: auto-asignado desde pago + generación del arte (solo al crear).
+    const initialStatus = computeAutoEarlyStatus(financialStatus, generationStatus);
 
     const existing = await this.prisma.orderItem.findUnique({
       where: { orderId_shopifyLineItemId: { orderId, shopifyLineItemId } },
@@ -263,11 +258,12 @@ export class OrdersService {
           : undefined,
       };
 
-      // Only move to terminal status if current status is still the initial one
-      if (
-        (initialStatus === 'cancelled' || initialStatus === 'refunded') &&
-        existing.productionStatus === 'paid'
-      ) {
+      // Reembolso/cancelación de Shopify ganan siempre (pueden ocurrir tras
+      // avanzar la producción). El resto solo se recomputa mientras el item siga
+      // en un estado temprano auto-gestionado (no pisa el avance manual del admin).
+      if (initialStatus === 'cancelled' || initialStatus === 'refunded') {
+        updates.productionStatus = initialStatus;
+      } else if (isEarlyAutoStatus(existing.productionStatus)) {
         updates.productionStatus = initialStatus;
       }
 
@@ -298,18 +294,6 @@ export class OrdersService {
           productionStatus: initialStatus,
         },
       });
-    }
-  }
-
-  private financialToProductionStatus(financialStatus?: string): string {
-    switch (financialStatus) {
-      case 'refunded':
-      case 'partially_refunded':
-        return 'refunded';
-      case 'voided':
-        return 'cancelled';
-      default:
-        return 'paid';
     }
   }
 
@@ -566,7 +550,10 @@ export class OrdersService {
     });
     if (!item) throw new NotFoundException('Order item not found');
 
-    const shouldShip = item.productionStatus === 'in_production';
+    // Agregar tracking envía el item si estaba en cualquier fase de producción
+    // previa al envío (pre_production / in_production / printed).
+    const shippableFrom = ['pre_production', 'in_production', 'printed'];
+    const shouldShip = shippableFrom.includes(item.productionStatus);
     const now = new Date();
 
     await this.prisma.orderItem.update({
@@ -585,7 +572,7 @@ export class OrdersService {
         orderId,
         orderItemId: itemId,
         eventType: 'tracking_added',
-        fromStatus: shouldShip ? 'in_production' : undefined,
+        fromStatus: shouldShip ? item.productionStatus : undefined,
         toStatus: shouldShip ? 'shipped' : undefined,
         source: 'admin',
         userId: adminUserId ?? null,

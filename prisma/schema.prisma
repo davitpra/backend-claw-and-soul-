@@ -488,7 +488,7 @@ model OrderItem {
   style                  String?
   size                   String?
   fulfillmentMethod      String    @default("in_house") @map("fulfillment_method") // in_house | pod
-  productionStatus       String    @default("paid") @map("production_status") // paid | in_production | shipped | delivered | cancelled | refunded
+  productionStatus       String    @default("draft") @map("production_status") // pending | generating | art_failed | draft | pre_production | in_production | printed | shipped | delivered | on_hold | cancelled | refunded | restocked
   trackingNumber         String?   @map("tracking_number")
   trackingUrl            String?   @map("tracking_url")
   trackingCarrier        String?   @map("tracking_carrier")

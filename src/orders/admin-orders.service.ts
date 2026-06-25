@@ -5,10 +5,7 @@ import {
   createPaginatedResult,
 } from '../common/utils/pagination.util';
 import { ExpensesService } from '../expenses/expenses.service';
-
-// Estados de producción terminales: el item ya no requiere trabajo del taller.
-// Una orden es "activa" (sale en la cola de producción) si tiene >=1 item NO terminal.
-const TERMINAL_PRODUCTION_STATUSES = ['delivered', 'cancelled', 'refunded'];
+import { PRODUCTION_QUEUE_STATUSES } from './production-status.util';
 
 @Injectable()
 export class AdminOrdersService {
@@ -117,7 +114,7 @@ export class AdminOrdersService {
     const where: Record<string, unknown> = {
       items: {
         some: {
-          productionStatus: { notIn: TERMINAL_PRODUCTION_STATUSES },
+          productionStatus: { in: PRODUCTION_QUEUE_STATUSES },
           ...(opts.method ? { fulfillmentMethod: opts.method } : {}),
         },
       },

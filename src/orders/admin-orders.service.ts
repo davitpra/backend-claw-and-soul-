@@ -78,6 +78,7 @@ export class AdminOrdersService {
           currency: true,
           financialStatus: true,
           fulfillmentStatus: true,
+          fulfillmentDisplayStatus: true,
           shopifyCreatedAt: true,
           items: {
             select: {

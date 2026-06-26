@@ -2,10 +2,14 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePetDto } from './dto/create-pet.dto';
 import { UpdatePetDto } from './dto/update-pet.dto';
+
+/** Máximo de fotos que se pueden guardar por mascota. */
+export const MAX_PET_PHOTOS = 4;
 
 @Injectable()
 export class PetsService {
@@ -150,6 +154,22 @@ export class PetsService {
         ...(data.isPrimary !== undefined && { isPrimary: data.isPrimary }),
       },
     });
+  }
+
+  // Valida que se pueda agregar otra foto (propiedad + tope MAX_PET_PHOTOS).
+  // Se llama antes de subir el archivo a S3 para no dejar objetos huérfanos.
+  async assertCanAddPhoto(petId: string, userId: string): Promise<void> {
+    const pet = await this.findOne(petId);
+    if (pet.userId !== userId) {
+      throw new ForbiddenException('You do not own this pet');
+    }
+
+    const count = await this.prisma.petPhoto.count({ where: { petId } });
+    if (count >= MAX_PET_PHOTOS) {
+      throw new BadRequestException(
+        `A pet can have at most ${MAX_PET_PHOTOS} photos`,
+      );
+    }
   }
 
   async addPhoto(

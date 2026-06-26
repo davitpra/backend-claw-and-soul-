@@ -43,6 +43,13 @@ export class GenerationsService {
       throw new BadRequestException('Pet does not belong to user');
     }
 
+    // Require at least one photo; the pipeline decides how many it uses.
+    if (!pet.photos || pet.photos.length === 0) {
+      throw new BadRequestException(
+        'Pet must have at least one photo to generate',
+      );
+    }
+
     // Validate pet photo belongs to pet and has a URL
     const petPhoto = await this.prisma.petPhoto.findUnique({
       where: { id: createDto.petPhotoId },

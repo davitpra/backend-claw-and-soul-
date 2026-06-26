@@ -142,6 +142,9 @@ export class PetsController {
       throw new BadRequestException('File must be an image');
     }
 
+    // Verifica propiedad y tope de fotos antes de subir a S3.
+    await this.petsService.assertCanAddPhoto(petId, user.sub);
+
     const key = `pets/${user.sub}/${petId}/${uuidv4()}`;
     const photoUrl = await this.storageService.upload(
       key,

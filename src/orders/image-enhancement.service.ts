@@ -734,6 +734,7 @@ export class ImageEnhancementService {
   }
 
   private resolvePrintInches(item: {
+    variantTitle?: string | null;
     productVariant: { podConfig: Prisma.JsonValue | null } | null;
   }): { width: number; height: number } | null {
     const cfg = item.productVariant?.podConfig as PodConfigShape | null;
@@ -744,7 +745,35 @@ export class ImageEnhancementService {
     ) {
       return { width: cfg.width, height: cfg.height };
     }
-    return null;
+    // Fallback: parse the inch dimensions embedded in the variant title, e.g.
+    // "30x40 cm / 12x16″ / No Frame". Since production became manual, podConfig
+    // is no longer populated, so the title is the remaining source of truth for
+    // the print size (and thus the cut/bleed/safe-zone guides).
+    return this.parseInchesFromTitle(item.variantTitle ?? null);
+  }
+
+  /**
+   * Extract print dimensions in inches from a variant title. Matches a
+   * "<w>x<h>" pair immediately followed by an inch mark (″ or "), e.g. the
+   * "12x16″" inside "30x40 cm / 12x16″ / No Frame".
+   */
+  private parseInchesFromTitle(
+    title: string | null,
+  ): { width: number; height: number } | null {
+    if (!title) return null;
+    const m = title.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:″|")/);
+    if (!m) return null;
+    const width = parseFloat(m[1]);
+    const height = parseFloat(m[2]);
+    if (
+      !Number.isFinite(width) ||
+      !Number.isFinite(height) ||
+      width <= 0 ||
+      height <= 0
+    ) {
+      return null;
+    }
+    return { width, height };
   }
 
   private async probeDimensions(

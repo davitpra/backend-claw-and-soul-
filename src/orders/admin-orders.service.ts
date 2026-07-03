@@ -178,11 +178,6 @@ export class AdminOrdersService {
                 displayName: true,
                 fulfillmentMethod: true,
                 shopifyHandle: true,
-                images: {
-                  orderBy: [{ isPrimary: 'desc' }, { orderIndex: 'asc' }],
-                  take: 1,
-                  select: { imageUrl: true },
-                },
                 style: {
                   select: {
                     images: {

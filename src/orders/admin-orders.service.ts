@@ -205,6 +205,9 @@ export class AdminOrdersService {
                 style: { select: { id: true, displayName: true } },
               },
             },
+            paintByNumbers: {
+              select: { id: true, outlineSvgUrl: true, previewUrl: true },
+            },
           },
           orderBy: { createdAt: 'asc' },
         },

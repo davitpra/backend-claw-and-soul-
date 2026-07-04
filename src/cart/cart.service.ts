@@ -52,6 +52,7 @@ export class CartService {
           quantity: dto.quantity ?? 1,
           img: dto.img,
           generationId: norm(dto.generationId),
+          paintByNumbersId: norm(dto.paintByNumbersId),
           imageUrl: norm(dto.imageUrl),
         },
       });
@@ -131,6 +132,7 @@ export class CartService {
         quantity: item.quantity,
         img: item.img,
         generationId: item.generationId ?? undefined,
+        paintByNumbersId: item.paintByNumbersId ?? undefined,
         imageUrl: item.imageUrl ?? undefined,
       })),
     };

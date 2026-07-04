@@ -17,6 +17,15 @@ export class ProductsController {
   }
 
   @Public()
+  @Get('pbn')
+  @ApiOperation({ summary: 'Get the configured Paint-by-Numbers product' })
+  @ApiResponse({ status: 200, description: 'PBN product retrieved' })
+  @ApiResponse({ status: 404, description: 'No PBN product configured' })
+  findPbnProduct() {
+    return this.productsService.findPbnProduct();
+  }
+
+  @Public()
   @Get(':handle/variants')
   @ApiOperation({
     summary: 'Get product variants with pre-resolved formatId mapping',

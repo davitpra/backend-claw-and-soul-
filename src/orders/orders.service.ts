@@ -8,6 +8,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { ShopifyApiService } from '../shopify-sync/shopify-api.service';
+import {
+  PaintByNumbersService,
+  PbnUploadFiles,
+} from '../paint-by-numbers/paint-by-numbers.service';
 import { ShopifyOrderPayload } from './dto/shopify-order.dto';
 import { Prisma } from '@prisma/client';
 import {
@@ -26,6 +30,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly shopifyApiService: ShopifyApiService,
+    private readonly pbnService: PaintByNumbersService,
   ) {}
 
   async ingestShopifyOrder(
@@ -50,6 +55,21 @@ export class OrdersService {
         select: { userId: true },
       });
       if (gen) userId = gen.userId;
+    }
+
+    // Priority 1b: from a linked Paint-by-Numbers (PBN products carry no generation).
+    if (!userId) {
+      const pbnIds = payload.line_items
+        .flatMap((li) => li.properties)
+        .filter((p) => p.name === 'paint_by_numbers_id')
+        .map((p) => p.value);
+      if (pbnIds.length > 0) {
+        const pbn = await this.prisma.paintByNumbers.findFirst({
+          where: { id: { in: pbnIds } },
+          select: { userId: true },
+        });
+        if (pbn) userId = pbn.userId;
+      }
     }
 
     if (!userId && payload.email) {
@@ -177,6 +197,7 @@ export class OrdersService {
       lineItem.properties.map((p) => [p.name, p.value]),
     );
     const generationIdAttr = attrs['generation_id'] ?? null;
+    const paintByNumbersIdAttr = attrs['paint_by_numbers_id'] ?? null;
     const imageUrl = attrs['image_url'] ?? null;
     const style = attrs['Style'] ?? attrs['style'] ?? null;
     const size = attrs['Size'] ?? attrs['size'] ?? null;
@@ -227,6 +248,28 @@ export class OrdersService {
       }
     }
 
+    // Validate paintByNumbersId
+    let paintByNumbersId: string | null = null;
+    let pbnPreviewUrl: string | null = null;
+    if (paintByNumbersIdAttr) {
+      const pbn = await this.prisma.paintByNumbers.findUnique({
+        where: { id: paintByNumbersIdAttr },
+        select: { id: true, previewUrl: true },
+      });
+      if (pbn) {
+        paintByNumbersId = pbn.id;
+        pbnPreviewUrl = pbn.previewUrl;
+      } else {
+        this.logger.warn(
+          `paint_by_numbers_id "${paintByNumbersIdAttr}" not found in DB — skipping link`,
+        );
+      }
+    }
+
+    // PBN lines don't carry image_url (avoid leaking the Cloudinary URL as a
+    // Shopify property); derive the item thumbnail from the linked PBN preview.
+    const effectiveImageUrl = imageUrl ?? pbnPreviewUrl;
+
     // Estado inicial: auto-asignado desde pago + generación del arte (solo al crear).
     const initialStatus = computeAutoEarlyStatus(financialStatus, generationStatus);
 
@@ -244,7 +287,7 @@ export class OrdersService {
         quantity: lineItem.quantity,
         unitPrice: new Prisma.Decimal(lineItem.price),
         totalPrice: new Prisma.Decimal(lineItem.price).mul(lineItem.quantity),
-        imageUrl: imageUrl ?? undefined,
+        imageUrl: effectiveImageUrl ?? undefined,
         style: style ?? undefined,
         size: size ?? undefined,
         productRef: productRefId
@@ -255,6 +298,9 @@ export class OrdersService {
           : undefined,
         generation: generationId
           ? { connect: { id: generationId } }
+          : undefined,
+        paintByNumbers: paintByNumbersId
+          ? { connect: { id: paintByNumbersId } }
           : undefined,
       };
 
@@ -281,19 +327,34 @@ export class OrdersService {
           productRefId,
           productFormatVariantId,
           generationId,
+          paintByNumbersId,
           title: lineItem.title,
           variantTitle: lineItem.variant_title ?? null,
           sku: lineItem.sku ?? null,
           quantity: lineItem.quantity,
           unitPrice: new Prisma.Decimal(lineItem.price),
           totalPrice: new Prisma.Decimal(lineItem.price).mul(lineItem.quantity),
-          imageUrl,
+          imageUrl: effectiveImageUrl,
           style,
           size,
           fulfillmentMethod,
           productionStatus: initialStatus,
         },
       });
+    }
+
+    // Mark the linked PBN as purchased (best-effort, non-blocking).
+    if (paintByNumbersId) {
+      await this.prisma.paintByNumbers
+        .update({
+          where: { id: paintByNumbersId },
+          data: { status: 'ordered' },
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `Failed to mark PBN ${paintByNumbersId} as ordered: ${(err as Error).message}`,
+          );
+        });
     }
   }
 
@@ -660,6 +721,57 @@ export class OrdersService {
         } as unknown as Prisma.InputJsonValue,
       },
     });
+  }
+
+  /**
+   * Admin: persist a Paint-by-Numbers rendered in the order studio and attach
+   * it to the order item. Reuses PaintByNumbersService.create (origin 'admin').
+   * The PBN is owned by the order's customer when the order is linked to a user
+   * (so it shows in their /user/pbn); otherwise by the admin.
+   */
+  async attachPbnToItem(
+    orderId: string,
+    itemId: string,
+    adminUserId: string,
+    files: PbnUploadFiles,
+    config: string,
+  ): Promise<{ id: string }> {
+    const item = await this.prisma.orderItem.findFirst({
+      where: { id: itemId, orderId },
+      include: { order: { select: { userId: true } } },
+    });
+    if (!item) throw new NotFoundException('Order item not found');
+
+    const ownerId = item.order.userId ?? adminUserId;
+    // create() validates the generation belongs to ownerId, so only forward it
+    // when the order is linked to the customer that owns that generation.
+    const generationId =
+      item.order.userId && item.generationId ? item.generationId : undefined;
+
+    const pbn = await this.pbnService.create(ownerId, 'admin', files, {
+      config,
+      generationId,
+    });
+
+    await this.prisma.orderItem.update({
+      where: { id: itemId },
+      data: { paintByNumbersId: pbn.id },
+    });
+
+    await this.prisma.orderEvent.create({
+      data: {
+        orderId,
+        orderItemId: itemId,
+        eventType: 'pbn_attached',
+        source: 'admin',
+        userId: adminUserId,
+        payload: {
+          paintByNumbersId: pbn.id,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return { id: pbn.id };
   }
 
   async replaceItemGenerationImage(

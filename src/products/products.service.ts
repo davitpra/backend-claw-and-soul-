@@ -132,6 +132,50 @@ export class ProductsService {
     };
   }
 
+  /** The single active product flagged as the Paint-by-Numbers kit, with its variants. */
+  async findPbnProduct() {
+    const product = await this.prisma.productReference.findFirst({
+      where: { isPaintByNumbers: true, isActive: true },
+      // Determinista: si por datos legacy hubiera varios marcados, gana el más
+      // reciente. La escritura garantiza unicidad vía setPbnProduct.
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        ...PRODUCT_INCLUDE,
+        productVariants: {
+          where: { isActive: true },
+          include: { format: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException('No Paint-by-Numbers product configured');
+    }
+
+    const mapped = addStylePreview(product);
+    return {
+      productRefId: product.id,
+      shopifyProductId: product.shopifyProductId,
+      shopifyHandle: product.shopifyHandle,
+      name: product.name,
+      displayName: product.displayName,
+      description: product.description,
+      style: mapped.style,
+      template: product.template,
+      variants: product.productVariants.map((v) => ({
+        shopifyVariantId: toShopifyVariantGid(v.shopifyVariantId),
+        shopifyVariantTitle: v.shopifyVariantTitle,
+        formatId: v.format.id,
+        formatName: v.format.name,
+        formatDisplayName: v.format.displayName,
+        aspectRatio: v.format.aspectRatio,
+        width: v.format.width,
+        height: v.format.height,
+      })),
+    };
+  }
+
   async findOne(id: string) {
     const product = await this.prisma.productReference.findUnique({
       where: { id },
@@ -186,6 +230,30 @@ export class ProductsService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Fija EL producto dedicado al kit Paint-by-Numbers (o ninguno si productId
+   * es null), garantizando unicidad: desmarca cualquier otro que estuviera
+   * marcado dentro de la misma transacción.
+   */
+  async setPbnProduct(productId: string | null) {
+    if (productId) await this.findOne(productId);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.productReference.updateMany({
+        where: {
+          isPaintByNumbers: true,
+          ...(productId ? { id: { not: productId } } : {}),
+        },
+        data: { isPaintByNumbers: false },
+      });
+      if (productId) {
+        await tx.productReference.update({
+          where: { id: productId },
+          data: { isPaintByNumbers: true },
+        });
+      }
+    });
   }
 
   async softDelete(id: string) {

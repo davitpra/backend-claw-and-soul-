@@ -18,6 +18,7 @@ import {
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { SetPbnProductDto } from './dto/set-pbn-product.dto';
 import { LinkVariantDto } from './dto/link-variant.dto';
 import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -248,6 +249,16 @@ export class AdminProductsController {
   })
   create(@Body() dto: CreateProductDto) {
     return this.productsService.create(dto);
+  }
+
+  @Patch('pbn')
+  @ApiOperation({
+    summary: 'Set the single product dedicated to the Paint-by-Numbers kit',
+  })
+  @ApiResponse({ status: 200, description: 'PBN product set' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  setPbnProduct(@Body() dto: SetPbnProductDto) {
+    return this.productsService.setPbnProduct(dto.productId);
   }
 
   @Patch(':productId')

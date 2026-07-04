@@ -14,9 +14,13 @@ import {
   HttpStatus,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileInterceptor,
+  FileFieldsInterceptor,
+} from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -300,6 +304,47 @@ export class AdminOrdersController {
       itemId,
       file,
       user?.id,
+    );
+  }
+
+  @Post(':id/items/:itemId/paint-by-numbers')
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'source', maxCount: 1 },
+      { name: 'svg', maxCount: 1 },
+      { name: 'preview', maxCount: 1 },
+      { name: 'palette', maxCount: 1 },
+    ]),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Save a Paint-by-Numbers rendered in the studio onto the item',
+  })
+  @ApiResponse({ status: 201, description: 'PBN saved and linked to the item' })
+  savePaintByNumbers(
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @UploadedFiles()
+    files: {
+      source?: Express.Multer.File[];
+      svg?: Express.Multer.File[];
+      preview?: Express.Multer.File[];
+      palette?: Express.Multer.File[];
+    },
+    @Body('config') config: string,
+    @CurrentUser() user: { sub: string },
+  ) {
+    return this.ordersService.attachPbnToItem(
+      orderId,
+      itemId,
+      user.sub,
+      {
+        source: files.source?.[0],
+        svg: files.svg?.[0],
+        preview: files.preview?.[0],
+        palette: files.palette?.[0],
+      },
+      config,
     );
   }
 

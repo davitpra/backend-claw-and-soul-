@@ -271,7 +271,10 @@ export class OrdersService {
     const effectiveImageUrl = imageUrl ?? pbnPreviewUrl;
 
     // Estado inicial: auto-asignado desde pago + generación del arte (solo al crear).
-    const initialStatus = computeAutoEarlyStatus(financialStatus, generationStatus);
+    const initialStatus = computeAutoEarlyStatus(
+      financialStatus,
+      generationStatus,
+    );
 
     const existing = await this.prisma.orderItem.findUnique({
       where: { orderId_shopifyLineItemId: { orderId, shopifyLineItemId } },

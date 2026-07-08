@@ -59,7 +59,9 @@ export class AdminOrdersService {
       // Shopify guarda `fulfillment_status` como null cuando no hay fulfillment;
       // en la UI eso se presenta como "unfulfilled".
       where.fulfillmentStatus =
-        opts.fulfillmentStatus === 'unfulfilled' ? null : opts.fulfillmentStatus;
+        opts.fulfillmentStatus === 'unfulfilled'
+          ? null
+          : opts.fulfillmentStatus;
     }
 
     const [orders, total] = await Promise.all([

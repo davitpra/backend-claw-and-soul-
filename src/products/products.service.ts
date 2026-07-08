@@ -364,5 +364,4 @@ export class ProductsService {
       include: { format: { select: { id: true, displayName: true } } },
     });
   }
-
 }

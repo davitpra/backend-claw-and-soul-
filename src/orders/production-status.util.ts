@@ -119,5 +119,5 @@ export function computeAutoEarlyStatus(
 
 /** True si el estado actual aún lo gobierna la auto-asignación. */
 export function isEarlyAutoStatus(status: string): boolean {
-  return (EARLY_AUTO_STATUSES as string[]).includes(status);
+  return EARLY_AUTO_STATUSES.includes(status);
 }

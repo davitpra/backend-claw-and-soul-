@@ -62,6 +62,16 @@ export class CreateStyleDto {
   templateVarOptions?: Record<string, any>;
 
   @ApiProperty({
+    example: { input: { nrOfClusters: 12 }, render: { fillOpacity: 0.3 } },
+    description:
+      'Default PBN studio config for this style ({ input, render }). Seeds the public PBN studio when arriving from a generation of this style.',
+    required: false,
+  })
+  @IsOptional()
+  @IsObject()
+  pbnConfig?: Record<string, any>;
+
+  @ApiProperty({
     example: 'uuid-of-vision-config',
     description: 'ID of the VisionConfig to use for this style',
     required: false,

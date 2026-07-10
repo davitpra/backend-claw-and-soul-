@@ -33,6 +33,7 @@ import { VisionConfigsModule } from './vision-configs/vision-configs.module';
 import { ImageGenConfigsModule } from './image-gen-configs/image-gen-configs.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { CartModule } from './cart/cart.module';
+import { CreditsModule } from './credits/credits.module';
 
 // Guards
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -84,6 +85,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     ImageGenConfigsModule,
     ExpensesModule,
     CartModule,
+    CreditsModule,
   ],
   providers: [
     {

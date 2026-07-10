@@ -4,6 +4,7 @@ export interface ShopifyVariant {
   option1: string | null;
   option2: string | null;
   option3: string | null;
+  price?: string; // presente en el payload REST de Shopify (no se persiste)
 }
 
 export interface ShopifyProductPayload {

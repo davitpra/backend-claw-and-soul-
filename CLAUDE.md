@@ -138,9 +138,43 @@ All endpoints prefixed with `/api` (configured in `main.ts`).
 - Generation type: `image`, `video`
 - Generation status: `pending`, `processing`, `completed`, `failed`
 
-## Free Generation Model
+## Generation Credit Model
 
-All image and video generations are FREE and UNLIMITED for all users. There are no credit checks or payment requirements. The role system (user/premium/admin) is preserved for future feature differentiation.
+Image generations consume **generation credits** (1 per generation). See the
+`credits` module (`src/credits/`):
+
+- Each user starts with **5 free credits** (signup bonus, granted via the ledger).
+- A **paid Shopify order grants +5 credits per unit** purchased on regular lines
+  (reason `order_bonus`), and **credit-pack lines grant their mapped amount**
+  (reason `pack_purchase`) — see the shared `grantOrderCredits` helper in
+  `OrdersService`. Both are idempotent per order.
+- **Admins are exempt** (role `admin` never consumes credits).
+- Credit is **deducted atomically** when a generation is created (inside the same
+  transaction) and **refunded automatically** if the generation ends in `failed`.
+- A **refunded/cancelled order claws back** its granted credits per line, mirroring
+  the grant (`5/unit` regular → `order_bonus_reversal`, pack line → `pack_purchase_reversal`),
+  via the shared `reverseCreditsForItems` helper. It fires on the refund/cancel
+  webhook (`refunds[]` payload for partials), the admin cancel endpoint, and manual
+  item transitions to `cancelled`/`refunded`/`restocked`; it's idempotent per
+  `(reason, OrderItem.id)`. Reversals **may drive the balance below 0** if the bonus
+  was already spent — the spend guard (`gte: 1`) blocks generating while negative.
+- Out of credits → `POST /api/generations` returns **402 Payment Required**.
+- Admins can grant credits manually via `POST /api/admin/credits/grant`.
+
+**Credit packs**: a `ProductReference` flagged `isCreditPack` sells credits as a
+Shopify product; each Shopify variant maps to a credit amount via the
+`CreditPackVariant` table (admin: `PATCH /admin/products/credit-pack` +
+`PUT /admin/products/:id/credit-pack-variants`; storefront discovery:
+`GET /products/credit-pack`). The authenticated checkout attaches a `_user_id`
+line-item property so the webhook credits the right account (validated against
+the order email). Pack `OrderItem`s start at `productionStatus: 'delivered'` so
+they don't enter the production queue.
+
+Balances live on `User.generationCredits`; every movement is recorded in the
+`CreditTransaction` ledger, whose unique `(reason, referenceId)` enforces
+idempotency (one signup bonus per user, one bonus + one pack grant per order, one
+spend/refund per generation). The role system (user/premium/admin) still
+differentiates admin exemption.
 
 ## Configuration
 

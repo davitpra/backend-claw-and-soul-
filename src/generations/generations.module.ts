@@ -9,6 +9,7 @@ import { StylesModule } from '../styles/styles.module';
 import { ImageGenerationProcessor } from './processors/image-generation.processor';
 import { QUEUE_NAMES } from './constants/queues.constants';
 import { ExpensesModule } from '../expenses/expenses.module';
+import { CreditsModule } from '../credits/credits.module';
 
 // Pipeline
 import { StrategyRegistry } from './pipeline/strategy.registry';
@@ -28,6 +29,7 @@ import { FalService } from './providers/fal/fal.service';
     StylesModule,
     BullModule.registerQueue({ name: QUEUE_NAMES.IMAGE_GENERATION }),
     ExpensesModule,
+    CreditsModule,
   ],
   controllers: [GenerationsController, AdminGenerationsController],
   providers: [

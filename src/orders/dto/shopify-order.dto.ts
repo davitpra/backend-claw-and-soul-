@@ -33,6 +33,16 @@ export interface ShopifyLineItem {
   properties: ShopifyLineItemProperty[];
 }
 
+export interface ShopifyRefundLineItem {
+  line_item_id: number;
+  quantity: number;
+}
+
+export interface ShopifyRefund {
+  id: number;
+  refund_line_items?: ShopifyRefundLineItem[];
+}
+
 export interface ShopifyCustomer {
   id?: number;
   email?: string;
@@ -65,4 +75,8 @@ export interface ShopifyOrderPayload {
   cancelled_at?: string | null;
   customer?: ShopifyCustomer;
   line_items: ShopifyLineItem[];
+  // Reembolsos aplicados a la orden. En reembolsos parciales, cada refund lista
+  // las líneas/cantidades afectadas — la fuente fiable para el clawback por línea
+  // (el productionStatus a nivel item colapsa parciales a 'refunded').
+  refunds?: ShopifyRefund[];
 }

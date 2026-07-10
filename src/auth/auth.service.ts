@@ -7,6 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreditsService } from '../credits/credits.service';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
@@ -24,10 +25,14 @@ export interface DeviceInfo {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  // Créditos de generación gratis otorgados al registrarse.
+  private static readonly SIGNUP_BONUS_CREDITS = 5;
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private creditsService: CreditsService,
   ) {}
 
   async register(registerDto: RegisterDto, deviceInfo?: DeviceInfo) {
@@ -44,13 +49,25 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(registerDto.password, 12);
 
     try {
-      // Create user (no credit initialization - all generations are free)
-      const user = await this.prisma.user.create({
-        data: {
-          email: registerDto.email,
-          passwordHash: hashedPassword,
-          fullName: registerDto.fullName,
-        },
+      // Crear usuario y otorgar el bono de bienvenida en la misma transacción:
+      // el crédito entra por el ledger (idempotente vía unique signup_bonus+userId).
+      const user = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            email: registerDto.email,
+            passwordHash: hashedPassword,
+            fullName: registerDto.fullName,
+          },
+        });
+        await this.creditsService.grant(
+          created.id,
+          AuthService.SIGNUP_BONUS_CREDITS,
+          'signup_bonus',
+          created.id,
+          'signup',
+          tx,
+        );
+        return created;
       });
 
       this.logger.log(`New user registered: ${user.email}`);
@@ -189,14 +206,26 @@ export class AuthService {
         });
       }
     } else {
-      user = await this.prisma.user.create({
-        data: {
-          email,
-          googleId,
-          fullName: payload.name,
-          avatarUrl: payload.picture,
-          emailVerified: true,
-        },
+      // Nuevo usuario vía Google: crear y otorgar el bono en la misma transacción.
+      user = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            email,
+            googleId,
+            fullName: payload.name,
+            avatarUrl: payload.picture,
+            emailVerified: true,
+          },
+        });
+        await this.creditsService.grant(
+          created.id,
+          AuthService.SIGNUP_BONUS_CREDITS,
+          'signup_bonus',
+          created.id,
+          'signup',
+          tx,
+        );
+        return created;
       });
       this.logger.log(`New user registered via Google: ${user.email}`);
     }

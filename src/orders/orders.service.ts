@@ -14,9 +14,11 @@ import {
 } from '../paint-by-numbers/paint-by-numbers.service';
 import { ShopifyOrderPayload } from './dto/shopify-order.dto';
 import { Prisma } from '@prisma/client';
+import { CreditsService } from '../credits/credits.service';
 import {
   VALID_TRANSITIONS,
   CANCELLABLE_STATUSES,
+  CLAWBACK_STATUSES,
   TERMINAL_STATUSES as INACTIVE_STATUSES,
   computeAutoEarlyStatus,
   isEarlyAutoStatus,
@@ -31,7 +33,11 @@ export class OrdersService {
     private readonly storageService: StorageService,
     private readonly shopifyApiService: ShopifyApiService,
     private readonly pbnService: PaintByNumbersService,
+    private readonly creditsService: CreditsService,
   ) {}
+
+  // Créditos de generación otorgados por cada unidad comprada en una orden pagada.
+  private static readonly CREDITS_PER_UNIT = 5;
 
   async ingestShopifyOrder(
     payload: ShopifyOrderPayload,
@@ -40,8 +46,44 @@ export class OrdersService {
   ): Promise<void> {
     const shopifyOrderId = String(payload.id);
 
-    // Resolve userId: priority 1 = from a linked generation, priority 2 = email match
+    // Resolve userId: priority 0 = _user_id from an authenticated checkout,
+    // priority 1 = linked generation/PBN, priority 2 = email match.
     let userId: string | null = null;
+
+    // Prioridad 0: user_id adjuntado por el checkout autenticado (property de
+    // línea "_user_id"; el prefijo "_" hace que Shopify lo oculte al cliente).
+    // Las properties son client-controlled, así que validamos: el usuario debe
+    // existir y, si la orden trae email, debe coincidir con el de ese usuario o
+    // no coincidir con ninguna cuenta (evita reclamar la orden ajena).
+    const userIdAttrs = payload.line_items
+      .flatMap((li) => li.properties)
+      .filter((p) => p.name === '_user_id')
+      .map((p) => p.value);
+    if (userIdAttrs.length > 0) {
+      const claimed = await this.prisma.user.findUnique({
+        where: { id: userIdAttrs[0] },
+        select: { id: true, email: true },
+      });
+      if (claimed) {
+        const orderEmail = payload.email?.toLowerCase();
+        if (!orderEmail || orderEmail === claimed.email.toLowerCase()) {
+          userId = claimed.id;
+        } else {
+          const conflict = await this.prisma.user.findFirst({
+            where: { email: { equals: payload.email!, mode: 'insensitive' } },
+            select: { id: true },
+          });
+          if (conflict) {
+            this.logger.warn(
+              `Order ${payload.name}: _user_id ${claimed.id} conflicts with email-matched user ${conflict.id}; ignoring _user_id.`,
+            );
+          } else {
+            // El email del checkout no matchea ninguna cuenta → confiamos en _user_id.
+            userId = claimed.id;
+          }
+        }
+      }
+    }
 
     // Try to get it from any line item that has a generation_id attribute
     const genIds = payload.line_items
@@ -49,7 +91,7 @@ export class OrdersService {
       .filter((p) => p.name === 'generation_id')
       .map((p) => p.value);
 
-    if (genIds.length > 0) {
+    if (!userId && genIds.length > 0) {
       const gen = await this.prisma.generation.findFirst({
         where: { id: { in: genIds } },
         select: { userId: true },
@@ -160,6 +202,48 @@ export class OrdersService {
       await this.ingestLineItem(order.id, lineItem, payload.financial_status);
     }
 
+    // Bono de créditos por compra cuando la orden está pagada. Se decide por el
+    // estado del payload (no por el topic del webhook) para cubrir
+    // orders/create-ya-pagada, orders/paid y orders/updated por igual.
+    if (payload.financial_status === 'paid' && order.userId) {
+      await this.grantOrderCredits({
+        id: order.id,
+        userId: order.userId,
+        orderNumber: payload.name,
+      });
+    }
+
+    // Clawback de créditos por reembolso/cancelación. Se decide por línea desde
+    // el payload (no por productionStatus, que colapsa parciales a 'refunded'):
+    // orden muerta → todas las líneas; parcial → solo las de refunds[]. El
+    // reverseCreditsForItems es idempotente por (reason, OrderItem.id).
+    const wholeOrderDead =
+      payload.cancelled_at != null ||
+      payload.financial_status === 'refunded' ||
+      payload.financial_status === 'voided';
+    const deadShopifyLineIds = wholeOrderDead
+      ? payload.line_items.map((li) => String(li.id))
+      : [
+          ...new Set(
+            (payload.refunds ?? []).flatMap((r) =>
+              (r.refund_line_items ?? []).map((rl) => String(rl.line_item_id)),
+            ),
+          ),
+        ];
+    if (deadShopifyLineIds.length > 0) {
+      const deadItems = await this.prisma.orderItem.findMany({
+        where: {
+          orderId: order.id,
+          shopifyLineItemId: { in: deadShopifyLineIds },
+        },
+        select: { id: true },
+      });
+      await this.reverseCreditsForItems(
+        order.id,
+        deadItems.map((i) => i.id),
+      );
+    }
+
     // Record webhook event
     await this.prisma.orderEvent.create({
       data: {
@@ -177,6 +261,189 @@ export class OrdersService {
     this.logger.log(
       `Ingested order ${payload.name} (${shopifyOrderId}) → DB id ${order.id}`,
     );
+  }
+
+  /**
+   * Otorga los créditos de una orden pagada, separando líneas de "credit pack"
+   * (creditAmount * qty, reason 'pack_purchase') de las líneas regulares
+   * (+5/unidad, reason 'order_bonus'). Se computa desde los OrderItems ya
+   * persistidos, así que ingestShopifyOrder y linkUserToOrder usan idéntica
+   * lógica. Ambos grants son idempotentes por (reason, order.id) — webhooks
+   * repetidos son no-op. Best-effort: un fallo no rompe la ingesta ni el link.
+   */
+  private async grantOrderCredits(order: {
+    id: string;
+    userId: string;
+    orderNumber: string | null;
+  }): Promise<void> {
+    const items = await this.prisma.orderItem.findMany({
+      where: { orderId: order.id },
+      select: { shopifyVariantId: true, quantity: true },
+    });
+    if (items.length === 0) return;
+
+    const variantIds = items
+      .map((it) => it.shopifyVariantId)
+      .filter((id): id is string => id !== null);
+    const packVariants =
+      variantIds.length > 0
+        ? await this.prisma.creditPackVariant.findMany({
+            where: { shopifyVariantId: { in: variantIds } },
+            select: { shopifyVariantId: true, creditAmount: true },
+          })
+        : [];
+    const packByVariant = new Map(
+      packVariants.map((pv) => [pv.shopifyVariantId, pv.creditAmount]),
+    );
+
+    let packCredits = 0;
+    let regularUnits = 0;
+    for (const it of items) {
+      const perUnit =
+        it.shopifyVariantId != null
+          ? packByVariant.get(it.shopifyVariantId)
+          : undefined;
+      if (perUnit != null) {
+        packCredits += perUnit * it.quantity;
+      } else {
+        regularUnits += it.quantity;
+      }
+    }
+
+    const label = order.orderNumber ?? order.id;
+    if (regularUnits > 0) {
+      await this.creditsService
+        .grant(
+          order.userId,
+          regularUnits * OrdersService.CREDITS_PER_UNIT,
+          'order_bonus',
+          order.id,
+          `Order ${label}`,
+        )
+        .catch((err: Error) =>
+          this.logger.warn(
+            `Failed to grant order bonus for ${order.id}: ${err.message}`,
+          ),
+        );
+    }
+    if (packCredits > 0) {
+      await this.creditsService
+        .grant(
+          order.userId,
+          packCredits,
+          'pack_purchase',
+          order.id,
+          `Credit pack — order ${label}`,
+        )
+        .catch((err: Error) =>
+          this.logger.warn(
+            `Failed to grant pack credits for ${order.id}: ${err.message}`,
+          ),
+        );
+    }
+  }
+
+  /**
+   * Revierte los créditos de las líneas reembolsadas/canceladas — espejo exacto
+   * de `grantOrderCredits`: líneas de credit pack revierten `creditAmount * qty`
+   * (reason `pack_purchase_reversal`) y líneas regulares `5/unidad` (reason
+   * `order_bonus_reversal`). Idempotente por línea (reason, OrderItem.id): un
+   * webhook/cancelación repetidos son no-op.
+   *
+   * No-op si la orden nunca recibió el grant correspondiente (guest sin vincular,
+   * orden nunca pagada): el `userId` sale de la fila del grant original, no de
+   * `order.userId`. El saldo puede quedar < 0 si el bono ya se gastó. Best-effort:
+   * un fallo se registra pero no rompe la ingesta ni la cancelación.
+   */
+  private async reverseCreditsForItems(
+    orderId: string,
+    itemIds: string[],
+  ): Promise<void> {
+    if (itemIds.length === 0) return;
+
+    // Grants originales por orden. Sin ellos no hay nada que revertir.
+    const [bonusGrant, packGrant] = await Promise.all([
+      this.prisma.creditTransaction.findUnique({
+        where: {
+          reason_referenceId: { reason: 'order_bonus', referenceId: orderId },
+        },
+        select: { userId: true },
+      }),
+      this.prisma.creditTransaction.findUnique({
+        where: {
+          reason_referenceId: { reason: 'pack_purchase', referenceId: orderId },
+        },
+        select: { userId: true },
+      }),
+    ]);
+    if (!bonusGrant && !packGrant) return;
+
+    const [items, order] = await Promise.all([
+      this.prisma.orderItem.findMany({
+        where: { id: { in: itemIds }, orderId },
+        select: { id: true, shopifyVariantId: true, quantity: true },
+      }),
+      this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: { orderNumber: true },
+      }),
+    ]);
+    if (items.length === 0) return;
+
+    const variantIds = items
+      .map((it) => it.shopifyVariantId)
+      .filter((id): id is string => id !== null);
+    const packVariants =
+      variantIds.length > 0
+        ? await this.prisma.creditPackVariant.findMany({
+            where: { shopifyVariantId: { in: variantIds } },
+            select: { shopifyVariantId: true, creditAmount: true },
+          })
+        : [];
+    const packByVariant = new Map(
+      packVariants.map((pv) => [pv.shopifyVariantId, pv.creditAmount]),
+    );
+
+    const label = order?.orderNumber ?? orderId;
+    for (const it of items) {
+      const perUnit =
+        it.shopifyVariantId != null
+          ? packByVariant.get(it.shopifyVariantId)
+          : undefined;
+      if (perUnit != null) {
+        // Línea de credit pack. Si el mapping se borró tras el grant, la línea
+        // caería en la rama regular (5/unidad) — rareza aceptada.
+        if (!packGrant) continue;
+        await this.creditsService
+          .revoke(
+            packGrant.userId,
+            perUnit * it.quantity,
+            'pack_purchase_reversal',
+            it.id,
+            `Refund/cancel credit pack — order ${label}`,
+          )
+          .catch((err: Error) =>
+            this.logger.warn(
+              `Failed to reverse pack credits for item ${it.id}: ${err.message}`,
+            ),
+          );
+      } else {
+        if (!bonusGrant) continue;
+        await this.creditsService
+          .revoke(
+            bonusGrant.userId,
+            it.quantity * OrdersService.CREDITS_PER_UNIT,
+            'order_bonus_reversal',
+            it.id,
+            `Refund/cancel — order ${label}`,
+          )
+          .catch((err: Error) =>
+            this.logger.warn(
+              `Failed to reverse order bonus for item ${it.id}: ${err.message}`,
+            ),
+          );
+      }
+    }
   }
 
   private async ingestLineItem(
@@ -206,15 +473,17 @@ export class OrdersService {
     let productRefId: string | null = null;
     let productFormatVariantId: string | null = null;
     let fulfillmentMethod = 'in_house';
+    let isCreditPack = false;
 
     if (shopifyProductId) {
       const ref = await this.prisma.productReference.findUnique({
         where: { shopifyProductId },
-        select: { id: true, fulfillmentMethod: true },
+        select: { id: true, fulfillmentMethod: true, isCreditPack: true },
       });
       if (ref) {
         productRefId = ref.id;
         fulfillmentMethod = ref.fulfillmentMethod;
+        isCreditPack = ref.isCreditPack;
       } else {
         this.logger.warn(
           `shopifyProductId "${shopifyProductId}" not found in ProductReference — defaulting fulfillmentMethod to "in_house"`,
@@ -271,10 +540,19 @@ export class OrdersService {
     const effectiveImageUrl = imageUrl ?? pbnPreviewUrl;
 
     // Estado inicial: auto-asignado desde pago + generación del arte (solo al crear).
-    const initialStatus = computeAutoEarlyStatus(
+    // Los credit packs son digitales: no entran a la cola de producción, así que
+    // arrancan en 'delivered' salvo que la orden esté cancelada/reembolsada.
+    let initialStatus = computeAutoEarlyStatus(
       financialStatus,
       generationStatus,
     );
+    if (
+      isCreditPack &&
+      initialStatus !== 'cancelled' &&
+      initialStatus !== 'refunded'
+    ) {
+      initialStatus = 'delivered';
+    }
 
     const existing = await this.prisma.orderItem.findUnique({
       where: { orderId_shopifyLineItemId: { orderId, shopifyLineItemId } },
@@ -459,6 +737,11 @@ export class OrdersService {
         payload: notes ? ({ notes } as Prisma.InputJsonValue) : Prisma.JsonNull,
       },
     });
+
+    // Al mover un item a cancelled/refunded/restocked se revierten sus créditos.
+    if (CLAWBACK_STATUSES.includes(toStatus)) {
+      await this.reverseCreditsForItems(orderId, [itemId]);
+    }
   }
 
   /**
@@ -591,6 +874,11 @@ export class OrdersService {
       }),
     ]);
 
+    // Clawback de créditos de las líneas canceladas (best-effort, fuera de la
+    // transacción como el grant). El webhook eco de Shopify reintenta las mismas
+    // líneas → idempotente por (reason, OrderItem.id).
+    await this.reverseCreditsForItems(orderId, [...targetIds]);
+
     this.logger.log(
       `Order ${order.orderNumber} cancel: items=${targetIds.size} action=${shopifyAction} warnings=${warnings.length}`,
     );
@@ -650,6 +938,31 @@ export class OrdersService {
         payload: { userId } as Prisma.InputJsonValue,
       },
     });
+
+    // Guest checkout vinculado tardíamente: si la orden ya estaba pagada, el
+    // webhook no pudo otorgar créditos (userId era null). Los otorgamos ahora;
+    // la unique (reason, order.id) evita doble-grant si el webhook llega luego.
+    if (order.financialStatus === 'paid') {
+      await this.grantOrderCredits({
+        id: order.id,
+        userId,
+        orderNumber: order.orderNumber,
+      });
+
+      // Si algún item ya fue cancelado/reembolsado (p. ej. cancelación admin
+      // antes del link), revertimos su parte ahora que la orden tiene usuario.
+      const deadItems = await this.prisma.orderItem.findMany({
+        where: {
+          orderId: order.id,
+          productionStatus: { in: CLAWBACK_STATUSES },
+        },
+        select: { id: true },
+      });
+      await this.reverseCreditsForItems(
+        order.id,
+        deadItems.map((i) => i.id),
+      );
+    }
   }
 
   async linkGenerationToItem(

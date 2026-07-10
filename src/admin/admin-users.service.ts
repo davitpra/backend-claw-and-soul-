@@ -37,6 +37,7 @@ export class AdminUsersService {
           fullName: true,
           role: true,
           isActive: true,
+          generationCredits: true,
           createdAt: true,
           lastLoginAt: true,
           _count: { select: { pets: true, generations: true } },
@@ -58,6 +59,7 @@ export class AdminUsersService {
         role: true,
         isActive: true,
         emailVerified: true,
+        generationCredits: true,
         createdAt: true,
         lastLoginAt: true,
         pets: {

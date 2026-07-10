@@ -26,6 +26,18 @@ export class ProductsController {
   }
 
   @Public()
+  @Get('credit-pack')
+  @ApiOperation({ summary: 'Get the configured credit pack product' })
+  @ApiResponse({ status: 200, description: 'Credit pack product retrieved' })
+  @ApiResponse({
+    status: 404,
+    description: 'No credit pack product configured',
+  })
+  findCreditPackProduct() {
+    return this.productsService.findCreditPackProduct();
+  }
+
+  @Public()
   @Get(':handle/variants')
   @ApiOperation({
     summary: 'Get product variants with pre-resolved formatId mapping',

@@ -75,6 +75,17 @@ export const VALID_TRANSITIONS: Record<string, string[]> = {
   restocked: [],
 };
 
+/**
+ * Estados que representan una compra deshecha (cancelada o devuelta) y que
+ * deben disparar el clawback de los créditos otorgados por la línea. Al entrar
+ * un item en uno de estos, se revierte su parte del bono/pack.
+ */
+export const CLAWBACK_STATUSES: string[] = [
+  'cancelled',
+  'refunded',
+  'restocked',
+];
+
 /** Estados desde los que un item aún puede cancelarse (no enviado todavía). */
 export const CANCELLABLE_STATUSES: string[] = [
   'pending',

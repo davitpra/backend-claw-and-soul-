@@ -256,6 +256,110 @@ export class ProductsService {
     });
   }
 
+  /**
+   * Fija EL producto dedicado al pack de créditos (o ninguno si productId es
+   * null), garantizando unicidad como setPbnProduct.
+   */
+  async setCreditPackProduct(productId: string | null) {
+    if (productId) await this.findOne(productId);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.productReference.updateMany({
+        where: {
+          isCreditPack: true,
+          ...(productId ? { id: { not: productId } } : {}),
+        },
+        data: { isCreditPack: false },
+      });
+      if (productId) {
+        await tx.productReference.update({
+          where: { id: productId },
+          data: { isCreditPack: true },
+        });
+      }
+    });
+  }
+
+  /** El único producto activo marcado como pack de créditos, con sus variantes. */
+  async findCreditPackProduct() {
+    const product = await this.prisma.productReference.findFirst({
+      where: { isCreditPack: true, isActive: true },
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        creditPackVariants: { orderBy: { creditAmount: 'asc' } },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException('No credit pack product configured');
+    }
+
+    return {
+      productRefId: product.id,
+      shopifyProductId: product.shopifyProductId,
+      shopifyHandle: product.shopifyHandle,
+      name: product.name,
+      displayName: product.displayName,
+      description: product.description,
+      template: product.template,
+      variants: product.creditPackVariants.map((v) => ({
+        shopifyVariantId: toShopifyVariantGid(v.shopifyVariantId),
+        creditAmount: v.creditAmount,
+      })),
+    };
+  }
+
+  /** Mapeo variante→créditos guardado en DB (IDs numéricos). */
+  async getCreditPackVariantRows(productRefId: string) {
+    return this.prisma.creditPackVariant.findMany({
+      where: { productRefId },
+      select: { shopifyVariantId: true, creditAmount: true },
+    });
+  }
+
+  /**
+   * Reemplaza por completo el mapeo variante→créditos de un producto pack:
+   * upsert de las entradas provistas y borrado de las ausentes. El producto
+   * debe existir y estar marcado como pack.
+   */
+  async setCreditPackVariants(
+    productId: string,
+    variants: { shopifyVariantId: string; creditAmount: number }[],
+  ) {
+    const product = await this.prisma.productReference.findUnique({
+      where: { id: productId },
+      select: { id: true, isCreditPack: true },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+    if (!product.isCreditPack) {
+      throw new ConflictException('Product is not marked as a credit pack');
+    }
+
+    const keep = variants.map((v) => v.shopifyVariantId);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.creditPackVariant.deleteMany({
+        where: {
+          productRefId: productId,
+          ...(keep.length > 0 ? { shopifyVariantId: { notIn: keep } } : {}),
+        },
+      });
+      for (const v of variants) {
+        await tx.creditPackVariant.upsert({
+          where: { shopifyVariantId: v.shopifyVariantId },
+          create: {
+            productRefId: productId,
+            shopifyVariantId: v.shopifyVariantId,
+            creditAmount: v.creditAmount,
+          },
+          update: { productRefId: productId, creditAmount: v.creditAmount },
+        });
+      }
+      return tx.creditPackVariant.findMany({
+        where: { productRefId: productId },
+        select: { shopifyVariantId: true, creditAmount: true },
+      });
+    });
+  }
+
   async softDelete(id: string) {
     await this.findOne(id);
     return this.prisma.productReference.update({

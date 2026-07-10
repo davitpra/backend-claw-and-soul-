@@ -17,6 +17,7 @@ import {
 } from '../common/utils/pagination.util';
 import { QUEUE_NAMES, JOB_NAMES } from './constants/queues.constants';
 import { ExpensesService } from '../expenses/expenses.service';
+import { CreditsService } from '../credits/credits.service';
 import {
   computeAutoEarlyStatus,
   EARLY_AUTO_STATUSES,
@@ -31,6 +32,7 @@ export class GenerationsService {
     private petsService: PetsService,
     @InjectQueue(QUEUE_NAMES.IMAGE_GENERATION) private imageQueue: Queue,
     private expensesService: ExpensesService,
+    private creditsService: CreditsService,
   ) {}
 
   async createImageGeneration(
@@ -75,6 +77,9 @@ export class GenerationsService {
         'This product has no style assigned yet. An admin must link it to a style before it can be used for generation.',
       );
     }
+    // Capturado tras el guard: el narrowing de product.styleId no sobrevive
+    // dentro del closure de $transaction, así que lo fijamos como string aquí.
+    const styleId = product.styleId;
 
     // Load style to validate userSelections against templateVarOptions
     const style = await this.prisma.style.findUnique({
@@ -101,31 +106,48 @@ export class GenerationsService {
       );
     }
 
-    // Create generation record (no credit checks - all generations are free)
-    const generation = await this.prisma.generation.create({
-      data: {
-        userId,
-        petId: createDto.petId,
-        petPhotoId: createDto.petPhotoId,
-        styleId: product.styleId,
-        formatId: createDto.formatId,
-        productRefId: createDto.productRefId,
-        type: 'image',
-        status: 'pending',
-        prompt: createDto.prompt || `${pet.species} ${pet.breed || ''}`,
-        negativePrompt: createDto.negativePrompt,
-        provider: createDto.provider || 'openai',
-        metadata: {
-          width: createDto.width || 1024,
-          height: createDto.height || 1024,
-          compatConstraints: variant.constraints ?? {},
-          userSelections: validatedSelections,
+    // Los admins generan sin consumir créditos. Leemos el rol fresco de la DB
+    // (no del JWT, que puede estar desactualizado tras un cambio de rol).
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    const isExempt = dbUser?.role === 'admin';
+
+    // Crear la generación y descontar 1 crédito en la misma transacción: si el
+    // usuario no tiene saldo, spendForGeneration lanza 402 y la fila se revierte.
+    const generation = await this.prisma.$transaction(async (tx) => {
+      const gen = await tx.generation.create({
+        data: {
+          userId,
+          petId: createDto.petId,
+          petPhotoId: createDto.petPhotoId,
+          styleId,
+          formatId: createDto.formatId,
+          productRefId: createDto.productRefId,
+          type: 'image',
+          status: 'pending',
+          prompt: createDto.prompt || `${pet.species} ${pet.breed || ''}`,
+          negativePrompt: createDto.negativePrompt,
+          provider: createDto.provider || 'openai',
+          metadata: {
+            width: createDto.width || 1024,
+            height: createDto.height || 1024,
+            compatConstraints: variant.constraints ?? {},
+            userSelections: validatedSelections,
+          },
         },
-      },
-      include: {
-        pet: true,
-        style: true,
-      },
+        include: {
+          pet: true,
+          style: true,
+        },
+      });
+
+      if (!isExempt) {
+        await this.creditsService.spendForGeneration(tx, userId, gen.id);
+      }
+
+      return gen;
     });
 
     this.logger.log(`Image generation created: ${generation.id}`);
@@ -435,6 +457,16 @@ export class GenerationsService {
         errorMessage,
       },
     });
+
+    // Reembolsar el crédito consumido. Best-effort e idempotente: si la
+    // generación era de admin (sin gasto) o ya se reembolsó, no hace nada.
+    await this.creditsService
+      .refundGeneration(generationId)
+      .catch((err: Error) =>
+        this.logger.warn(
+          `Failed to refund credit for ${generationId}: ${err.message}`,
+        ),
+      );
 
     await this.syncLinkedOrderItems(generationId, 'failed');
 

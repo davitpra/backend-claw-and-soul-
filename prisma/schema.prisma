@@ -22,24 +22,56 @@ model User {
   role             String    @default("user") // Enum: user, premium, admin
   emailVerified    Boolean   @default(false) @map("email_verified")
   isActive         Boolean   @default(true) @map("is_active")
+  // Saldo de créditos de generación. Es la fuente rápida de lectura; la suma de
+  // creditTransactions debe cuadrar con este valor (invariante mantenido en
+  // CreditsService). Default 0: el bono de registro entra por el ledger.
+  generationCredits Int      @default(0) @map("generation_credits")
   lastLoginAt      DateTime? @map("last_login_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
 
   // Relations
-  pets           Pet[]
-  generations    Generation[]
-  paintByNumbers PaintByNumbers[]
-  auditLogs      AuditLog[]
-  refreshTokens  RefreshToken[]
-  orders         Order[]
-  expenses       Expense[]
-  cart           Cart?
+  pets               Pet[]
+  generations        Generation[]
+  paintByNumbers     PaintByNumbers[]
+  auditLogs          AuditLog[]
+  refreshTokens      RefreshToken[]
+  orders             Order[]
+  expenses           Expense[]
+  creditTransactions CreditTransaction[]
+  cart               Cart?
 
   @@index([email])
   @@index([role])
   @@index([googleId])
   @@map("users")
+}
+
+// Libro mayor de créditos de generación. Cada fila es un movimiento (+/-).
+// La unique (reason, referenceId) garantiza idempotencia:
+//   - signup_bonus           → referenceId = userId       (un bono por usuario)
+//   - order_bonus            → referenceId = Order.id     (un grant por orden, líneas regulares)
+//   - pack_purchase          → referenceId = Order.id     (un grant por orden, líneas de credit pack)
+//   - order_bonus_reversal   → referenceId = OrderItem.id (una reversa por línea regular reembolsada/cancelada)
+//   - pack_purchase_reversal → referenceId = OrderItem.id (una reversa por línea de credit pack reembolsada)
+//   - generation_spend       → referenceId = generationId (un gasto por generación)
+//   - generation_refund      → referenceId = generationId (un reembolso por generación)
+//   - admin_grant            → referenceId = null         (Postgres trata NULLs como distintos → repetible)
+// Las reversas pueden dejar generationCredits < 0 (el guard de gasto lo bloquea).
+model CreditTransaction {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  amount      Int // positivo = grant, negativo = spend
+  reason      String // signup_bonus | order_bonus | pack_purchase | order_bonus_reversal | pack_purchase_reversal | admin_grant | generation_spend | generation_refund
+  referenceId String?  @map("reference_id")
+  note        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reason, referenceId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("credit_transactions")
 }
 
 model RefreshToken {
@@ -281,18 +313,21 @@ model ProductReference {
   showcaseCollectionHandle String?  @map("showcase_collection_handle")
   isActive                 Boolean  @default(true) @map("is_active")
   isPaintByNumbers         Boolean  @default(false) @map("is_paint_by_numbers")
+  isCreditPack             Boolean  @default(false) @map("is_credit_pack")
   fulfillmentMethod        String   @default("in_house") @map("fulfillment_method") // in_house | pod
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @default(now()) @updatedAt @map("updated_at")
 
-  style           Style?                 @relation(fields: [styleId], references: [id], onDelete: SetNull)
-  generations     Generation[]
-  productVariants ProductFormatVariant[]
-  orderItems      OrderItem[]
+  style             Style?                 @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  generations       Generation[]
+  productVariants   ProductFormatVariant[]
+  creditPackVariants CreditPackVariant[]
+  orderItems        OrderItem[]
 
   @@index([isActive])
   @@index([styleId])
   @@index([isPaintByNumbers])
+  @@index([isCreditPack])
   @@map("product_references")
 }
 
@@ -316,6 +351,23 @@ model ProductFormatVariant {
   @@unique([productRefId, shopifyVariantId])
   @@index([shopifyVariantId])
   @@map("product_format_variants")
+}
+
+// Mapea una variante Shopify del producto "credit pack" a la cantidad de
+// créditos que otorga. shopifyVariantId es el ID numérico (como en OrderItem),
+// para que el webhook lo cruce directo con las líneas de la orden.
+model CreditPackVariant {
+  id               String   @id @default(uuid())
+  productRefId     String   @map("product_ref_id")
+  shopifyVariantId String   @unique @map("shopify_variant_id")
+  creditAmount     Int      @map("credit_amount")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  productRef ProductReference @relation(fields: [productRefId], references: [id], onDelete: Cascade)
+
+  @@index([productRefId])
+  @@map("credit_pack_variants")
 }
 
 // ============================================

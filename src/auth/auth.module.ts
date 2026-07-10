@@ -6,11 +6,13 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthCleanupService } from './auth-cleanup.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { CreditsModule } from '../credits/credits.module';
 
 @Module({
   imports: [
     PrismaModule,
     PassportModule,
+    CreditsModule,
     JwtModule.register({}), // Configuration is done in the service using ConfigService
   ],
   controllers: [AuthController],

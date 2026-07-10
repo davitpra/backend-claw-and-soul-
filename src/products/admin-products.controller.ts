@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -19,6 +20,8 @@ import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { SetPbnProductDto } from './dto/set-pbn-product.dto';
+import { SetCreditPackProductDto } from './dto/set-credit-pack-product.dto';
+import { SetCreditPackVariantsDto } from './dto/set-credit-pack-variants.dto';
 import { LinkVariantDto } from './dto/link-variant.dto';
 import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -259,6 +262,75 @@ export class AdminProductsController {
   @ApiResponse({ status: 404, description: 'Product not found' })
   setPbnProduct(@Body() dto: SetPbnProductDto) {
     return this.productsService.setPbnProduct(dto.productId);
+  }
+
+  @Patch('credit-pack')
+  @ApiOperation({
+    summary: 'Set the single product dedicated to the credit pack',
+  })
+  @ApiResponse({ status: 200, description: 'Credit pack product set' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  setCreditPackProduct(@Body() dto: SetCreditPackProductDto) {
+    return this.productsService.setCreditPackProduct(dto.productId);
+  }
+
+  @Get(':productId/credit-pack-variants')
+  @ApiOperation({
+    summary: 'Get live Shopify variants joined with their credit mapping',
+  })
+  @ApiResponse({ status: 200, description: 'Credit pack variants retrieved' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  async getCreditPackVariants(@Param('productId') productId: string) {
+    const product = await this.productsService.findOne(productId);
+    const dbRows =
+      await this.productsService.getCreditPackVariantRows(productId);
+    const creditByVariant = new Map(
+      dbRows.map((r) => [r.shopifyVariantId, r.creditAmount]),
+    );
+
+    const shopifyProduct = await this.shopifyApiService.fetchProductById(
+      product.shopifyProductId,
+    );
+
+    // Shopify inaccesible: devolvemos solo lo que hay en DB.
+    if (!shopifyProduct) {
+      return {
+        product: { id: product.id, displayName: product.displayName },
+        variants: dbRows.map((r) => ({
+          shopifyVariantId: r.shopifyVariantId,
+          shopifyVariantTitle: null,
+          price: null,
+          creditAmount: r.creditAmount,
+        })),
+      };
+    }
+
+    return {
+      product: { id: product.id, displayName: product.displayName },
+      variants: shopifyProduct.variants.map((v) => {
+        const shopifyVariantId = String(v.id);
+        return {
+          shopifyVariantId,
+          shopifyVariantTitle: v.title,
+          price: v.price ?? null,
+          creditAmount: creditByVariant.get(shopifyVariantId) ?? null,
+        };
+      }),
+    };
+  }
+
+  @Put(':productId/credit-pack-variants')
+  @ApiOperation({
+    summary: 'Replace the variant→credits mapping for a product',
+  })
+  @ApiResponse({ status: 200, description: 'Credit pack variants updated' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({ status: 409, description: 'Product is not a credit pack' })
+  setCreditPackVariants(
+    @Param('productId') productId: string,
+    @Body() dto: SetCreditPackVariantsDto,
+  ) {
+    return this.productsService.setCreditPackVariants(productId, dto.variants);
   }
 
   @Patch(':productId')

@@ -117,4 +117,28 @@ export class AdminUsersService {
   async getUserOrders(userId: string, page = 1, limit = 10) {
     return this.adminOrdersService.getUserOrders(userId, page, limit);
   }
+
+  async getUserCreditTransactions(userId: string, page = 1, limit = 20) {
+    const { skip, take } = getPaginationParams(page, limit);
+
+    const [transactions, total] = await Promise.all([
+      this.prisma.creditTransaction.findMany({
+        where: { userId },
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          amount: true,
+          reason: true,
+          referenceId: true,
+          note: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.creditTransaction.count({ where: { userId } }),
+    ]);
+
+    return createPaginatedResult(transactions, total, page, limit);
+  }
 }

@@ -136,6 +136,39 @@ describe('OrdersService', () => {
       );
     });
 
+    // LIMITACIÓN CONOCIDA (refund parcial por cantidad): reverseCreditsForItems
+    // decide el monto con la cantidad TOTAL del OrderItem (it.quantity), no con la
+    // cantidad realmente reembolsada. El webhook además descarta
+    // refunds[].refund_line_items[].quantity (orders.service.ts:228-230), pasando
+    // solo el line_item_id. Por eso el primer refund parcial de una línea de pack
+    // revierte la LÍNEA COMPLETA, y —por la idempotencia (reason, OrderItem.id)—
+    // un segundo refund de esa misma línea es no-op. Este test fija ese
+    // comportamiento actual (sobre-reversión a nivel de línea), no la exactitud por
+    // unidad. Si algún día se corrige, este test debe actualizarse.
+    it('refund parcial de un pack revierte la línea COMPLETA (creditAmount*qty total)', async () => {
+      stubGrants({ bonusUserId: null, packUserId: 'user-pack' });
+      // OrderItem con 3 unidades; el cliente solo reembolsó 1 (info que no llega
+      // hasta aquí). La reversión usa las 3 unidades igualmente.
+      mockPrisma.orderItem.findMany.mockResolvedValue([
+        { id: 'pack-1', shopifyVariantId: 'v-pack', quantity: 3 },
+      ]);
+      mockPrisma.creditPackVariant.findMany.mockResolvedValue([
+        { shopifyVariantId: 'v-pack', creditAmount: 100 },
+      ]);
+
+      await reverse('order-1', ['pack-1']);
+
+      // 100 * 3 = 300 (línea completa), no 100 * 1 = 100 (unidad reembolsada).
+      expect(mockCredits.revoke).toHaveBeenCalledTimes(1);
+      expect(mockCredits.revoke).toHaveBeenCalledWith(
+        'user-pack',
+        300,
+        'pack_purchase_reversal',
+        'pack-1',
+        expect.any(String),
+      );
+    });
+
     it('omite líneas de pack cuando no existe grant pack_purchase', async () => {
       stubGrants({ bonusUserId: 'user-bonus', packUserId: null });
       mockPrisma.orderItem.findMany.mockResolvedValue([

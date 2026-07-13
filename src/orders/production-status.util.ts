@@ -108,6 +108,7 @@ export const CANCELLABLE_STATUSES: string[] = [
 export function computeAutoEarlyStatus(
   financialStatus?: string | null,
   generationStatus?: string | null,
+  isAccessory = false,
 ): ProductionStatus {
   switch (financialStatus) {
     case 'refunded':
@@ -120,6 +121,10 @@ export function computeAutoEarlyStatus(
     case 'partially_paid':
       return 'pending';
   }
+  // Accesorios: stock propio genérico, sin arte generado por IA. Una vez pagada
+  // la orden entran directo a `draft` (cola de producción manual); nunca pasan
+  // por `generating`/`art_failed`. El admin avanzará draft → shipped a mano.
+  if (isAccessory) return 'draft';
   // Pagado (`paid` u otros/ausente): el estado depende del arte.
   if (generationStatus === 'failed') return 'art_failed';
   if (generationStatus === 'pending' || generationStatus === 'processing') {

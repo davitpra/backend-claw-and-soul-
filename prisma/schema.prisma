@@ -314,6 +314,7 @@ model ProductReference {
   isActive                 Boolean  @default(true) @map("is_active")
   isPaintByNumbers         Boolean  @default(false) @map("is_paint_by_numbers")
   isCreditPack             Boolean  @default(false) @map("is_credit_pack")
+  isAccessory              Boolean  @default(false) @map("is_accessory")
   fulfillmentMethod        String   @default("in_house") @map("fulfillment_method") // in_house | pod
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @default(now()) @updatedAt @map("updated_at")
@@ -328,6 +329,7 @@ model ProductReference {
   @@index([styleId])
   @@index([isPaintByNumbers])
   @@index([isCreditPack])
+  @@index([isAccessory])
   @@map("product_references")
 }
 

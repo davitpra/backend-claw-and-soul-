@@ -279,6 +279,21 @@ export class ProductsService {
     });
   }
 
+  /**
+   * Marca o desmarca un producto como accesorio PBN. A diferencia de
+   * setPbnProduct/setCreditPackProduct, NO es único: pueden coexistir muchos
+   * accesorios, así que solo se actualiza el flag del producto indicado.
+   */
+  async setAccessoryProduct(productId: string, isAccessory: boolean) {
+    await this.findOne(productId);
+    const row = await this.prisma.productReference.update({
+      where: { id: productId },
+      data: { isAccessory },
+      include: PRODUCT_INCLUDE,
+    });
+    return addStylePreview(row);
+  }
+
   /** El único producto activo marcado como pack de créditos, con sus variantes. */
   async findCreditPackProduct() {
     const product = await this.prisma.productReference.findFirst({

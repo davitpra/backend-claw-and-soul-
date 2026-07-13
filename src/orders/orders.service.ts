@@ -474,16 +474,23 @@ export class OrdersService {
     let productFormatVariantId: string | null = null;
     let fulfillmentMethod = 'in_house';
     let isCreditPack = false;
+    let isAccessory = false;
 
     if (shopifyProductId) {
       const ref = await this.prisma.productReference.findUnique({
         where: { shopifyProductId },
-        select: { id: true, fulfillmentMethod: true, isCreditPack: true },
+        select: {
+          id: true,
+          fulfillmentMethod: true,
+          isCreditPack: true,
+          isAccessory: true,
+        },
       });
       if (ref) {
         productRefId = ref.id;
         fulfillmentMethod = ref.fulfillmentMethod;
         isCreditPack = ref.isCreditPack;
+        isAccessory = ref.isAccessory;
       } else {
         this.logger.warn(
           `shopifyProductId "${shopifyProductId}" not found in ProductReference — defaulting fulfillmentMethod to "in_house"`,
@@ -545,6 +552,7 @@ export class OrdersService {
     let initialStatus = computeAutoEarlyStatus(
       financialStatus,
       generationStatus,
+      isAccessory,
     );
     if (
       isCreditPack &&

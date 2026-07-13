@@ -13,11 +13,10 @@ const mockPrisma = {
   user: {
     update: jest.fn(),
   },
-  $transaction: jest.fn(
-    (arg: unknown) =>
-      typeof arg === 'function'
-        ? (arg as (c: unknown) => unknown)(mockPrisma)
-        : Promise.all(arg as unknown[]),
+  $transaction: jest.fn((arg: unknown) =>
+    typeof arg === 'function'
+      ? (arg as (c: unknown) => unknown)(mockPrisma)
+      : Promise.all(arg as unknown[]),
   ),
 };
 

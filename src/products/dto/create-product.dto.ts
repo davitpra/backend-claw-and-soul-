@@ -46,11 +46,11 @@ export class CreateProductDto {
   @ApiProperty({
     description:
       'Storefront template override. Null = use default (Canvas) fallback.',
-    enum: ['Canvas', 'Poster'],
+    enum: ['Canvas', 'Poster', 'Credits', 'Accessory'],
     required: false,
   })
   @IsOptional()
   @IsString()
-  @IsIn(['Canvas', 'Poster'])
+  @IsIn(['Canvas', 'Poster', 'Credits', 'Accessory'])
   template?: string;
 }

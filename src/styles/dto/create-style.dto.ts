@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsBoolean,
   IsObject,
+  IsIn,
   MaxLength,
   IsUUID,
 } from 'class-validator';
@@ -23,6 +24,16 @@ export class CreateStyleDto {
   @IsString()
   @MaxLength(100)
   category: string;
+
+  @ApiProperty({
+    example: 'medium',
+    enum: ['easy', 'medium', 'challenging'],
+    required: false,
+    description: 'Perceived painting difficulty of the style',
+  })
+  @IsOptional()
+  @IsIn(['easy', 'medium', 'challenging'])
+  difficulty?: 'easy' | 'medium' | 'challenging';
 
   @ApiProperty({ example: 'default', required: false })
   @IsOptional()

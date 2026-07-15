@@ -228,6 +228,8 @@ model Style {
   name                     String   @unique
   displayName              String   @map("display_name")
   category                 String
+  // Dificultad percibida del estilo para pintar (easy | medium | challenging)
+  difficulty               String   @default("medium")
   styleReferenceUrl        String?  @map("style_reference_url")
   styleReferenceStorageKey String?  @map("style_reference_storage_key")
   isActive                 Boolean  @default(true) @map("is_active")

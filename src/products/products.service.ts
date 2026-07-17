@@ -17,6 +17,7 @@ const PRODUCT_INCLUDE = {
       id: true,
       name: true,
       displayName: true,
+      category: true,
       difficulty: true,
       images: {
         where: { isPrimary: true },

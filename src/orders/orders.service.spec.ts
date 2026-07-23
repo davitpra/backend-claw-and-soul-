@@ -169,6 +169,41 @@ describe('OrdersService', () => {
       );
     });
 
+    it('salta líneas Digital/PBN: nunca recibieron bono, no revierte nada', async () => {
+      stubGrants({ bonusUserId: 'user-bonus', packUserId: null });
+      mockPrisma.orderItem.findMany.mockResolvedValue([
+        {
+          id: 'reg-1',
+          shopifyVariantId: 'v-reg',
+          quantity: 1,
+          productRef: { template: 'Canvas' },
+        },
+        {
+          id: 'dig-1',
+          shopifyVariantId: 'v-dig',
+          quantity: 2,
+          productRef: { template: 'Digital' },
+        },
+        {
+          id: 'pbn-1',
+          shopifyVariantId: 'v-pbn',
+          quantity: 1,
+          productRef: { template: 'PBN' },
+        },
+      ]);
+
+      await reverse('order-1', ['reg-1', 'dig-1', 'pbn-1']);
+
+      expect(mockCredits.revoke).toHaveBeenCalledTimes(1);
+      expect(mockCredits.revoke).toHaveBeenCalledWith(
+        'user-bonus',
+        5,
+        'order_bonus_reversal',
+        'reg-1',
+        expect.any(String),
+      );
+    });
+
     it('omite líneas de pack cuando no existe grant pack_purchase', async () => {
       stubGrants({ bonusUserId: 'user-bonus', packUserId: null });
       mockPrisma.orderItem.findMany.mockResolvedValue([
@@ -189,6 +224,66 @@ describe('OrdersService', () => {
         'reg-1',
         expect.any(String),
       );
+    });
+  });
+
+  // Acceso al método privado sin exponerlo en la API pública.
+  const grant = (order: {
+    id: string;
+    userId: string;
+    orderNumber: string | null;
+  }) =>
+    (
+      service as unknown as {
+        grantOrderCredits: (o: typeof order) => Promise<void>;
+      }
+    ).grantOrderCredits(order);
+
+  describe('grantOrderCredits', () => {
+    it('excluye líneas Digital/PBN del order_bonus (+5/unidad)', async () => {
+      mockPrisma.orderItem.findMany.mockResolvedValue([
+        {
+          shopifyVariantId: 'v-reg',
+          quantity: 2,
+          productRef: { template: 'Canvas' },
+        },
+        {
+          shopifyVariantId: 'v-dig',
+          quantity: 3,
+          productRef: { template: 'Digital' },
+        },
+        {
+          shopifyVariantId: 'v-pbn',
+          quantity: 1,
+          productRef: { template: 'PBN' },
+        },
+      ]);
+
+      await grant({ id: 'order-1', userId: 'user-1', orderNumber: '#1042' });
+
+      // Solo la línea Canvas suma: 2 * 5 = 10.
+      expect(mockCredits.grant).toHaveBeenCalledTimes(1);
+      expect(mockCredits.grant).toHaveBeenCalledWith(
+        'user-1',
+        10,
+        'order_bonus',
+        'order-1',
+        expect.any(String),
+      );
+    });
+
+    it('no otorga nada si la orden solo tiene líneas Digital', async () => {
+      mockPrisma.orderItem.findMany.mockResolvedValue([
+        {
+          shopifyVariantId: 'v-dig',
+          quantity: 1,
+          productRef: { template: 'Digital' },
+        },
+      ]);
+
+      await grant({ id: 'order-1', userId: 'user-1', orderNumber: '#1042' });
+
+      expect(mockCredits.grant).not.toHaveBeenCalled();
     });
   });
 

@@ -39,6 +39,16 @@ export class OrdersService {
   // Créditos de generación otorgados por cada unidad comprada en una orden pagada.
   private static readonly CREDITS_PER_UNIT = 5;
 
+  // Los productos Digital (descarga gratuita; "PBN" es el alias legacy) no
+  // otorgan ni revierten el order_bonus: son gratis, y otorgarlo permitiría
+  // farmear créditos comprándolos a $0.
+  private static isDigitalTemplate(
+    template: string | null | undefined,
+  ): boolean {
+    const t = template?.trim();
+    return t === 'Digital' || t === 'PBN';
+  }
+
   async ingestShopifyOrder(
     payload: ShopifyOrderPayload,
     webhookId?: string,
@@ -266,7 +276,8 @@ export class OrdersService {
   /**
    * Otorga los créditos de una orden pagada, separando líneas de "credit pack"
    * (creditAmount * qty, reason 'pack_purchase') de las líneas regulares
-   * (+5/unidad, reason 'order_bonus'). Se computa desde los OrderItems ya
+   * (+5/unidad, reason 'order_bonus'). Las líneas Digital/PBN (producto
+   * gratuito) se excluyen de ambos grants. Se computa desde los OrderItems ya
    * persistidos, así que ingestShopifyOrder y linkUserToOrder usan idéntica
    * lógica. Ambos grants son idempotentes por (reason, order.id) — webhooks
    * repetidos son no-op. Best-effort: un fallo no rompe la ingesta ni el link.
@@ -278,7 +289,11 @@ export class OrdersService {
   }): Promise<void> {
     const items = await this.prisma.orderItem.findMany({
       where: { orderId: order.id },
-      select: { shopifyVariantId: true, quantity: true },
+      select: {
+        shopifyVariantId: true,
+        quantity: true,
+        productRef: { select: { template: true } },
+      },
     });
     if (items.length === 0) return;
 
@@ -305,7 +320,9 @@ export class OrdersService {
           : undefined;
       if (perUnit != null) {
         packCredits += perUnit * it.quantity;
-      } else {
+      } else if (
+        !OrdersService.isDigitalTemplate(it.productRef?.template)
+      ) {
         regularUnits += it.quantity;
       }
     }
@@ -347,8 +364,9 @@ export class OrdersService {
    * Revierte los créditos de las líneas reembolsadas/canceladas — espejo exacto
    * de `grantOrderCredits`: líneas de credit pack revierten `creditAmount * qty`
    * (reason `pack_purchase_reversal`) y líneas regulares `5/unidad` (reason
-   * `order_bonus_reversal`). Idempotente por línea (reason, OrderItem.id): un
-   * webhook/cancelación repetidos son no-op.
+   * `order_bonus_reversal`). Las líneas Digital/PBN se saltan, igual que en el
+   * grant: nunca recibieron bono, no hay nada que revertir. Idempotente por
+   * línea (reason, OrderItem.id): un webhook/cancelación repetidos son no-op.
    *
    * No-op si la orden nunca recibió el grant correspondiente (guest sin vincular,
    * orden nunca pagada): el `userId` sale de la fila del grant original, no de
@@ -381,7 +399,12 @@ export class OrdersService {
     const [items, order] = await Promise.all([
       this.prisma.orderItem.findMany({
         where: { id: { in: itemIds }, orderId },
-        select: { id: true, shopifyVariantId: true, quantity: true },
+        select: {
+          id: true,
+          shopifyVariantId: true,
+          quantity: true,
+          productRef: { select: { template: true } },
+        },
       }),
       this.prisma.order.findUnique({
         where: { id: orderId },
@@ -429,6 +452,8 @@ export class OrdersService {
           );
       } else {
         if (!bonusGrant) continue;
+        // Digital/PBN nunca sumó al order_bonus: no revertir lo no otorgado.
+        if (OrdersService.isDigitalTemplate(it.productRef?.template)) continue;
         await this.creditsService
           .revoke(
             bonusGrant.userId,

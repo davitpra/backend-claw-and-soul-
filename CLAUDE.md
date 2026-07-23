@@ -147,7 +147,9 @@ Image generations consume **generation credits** (1 per generation). See the
 - A **paid Shopify order grants +5 credits per unit** purchased on regular lines
   (reason `order_bonus`), and **credit-pack lines grant their mapped amount**
   (reason `pack_purchase`) — see the shared `grantOrderCredits` helper in
-  `OrdersService`. Both are idempotent per order.
+  `OrdersService`. Both are idempotent per order. **Digital/PBN lines are
+  excluded** from the bonus (free product; granting would allow farming credits
+  at $0) — same exclusion applies on reversal.
 - **Admins are exempt** (role `admin` never consumes credits).
 - Credit is **deducted atomically** when a generation is created (inside the same
   transaction) and **refunded automatically** if the generation ends in `failed`.

@@ -120,6 +120,7 @@ export class ProductsService {
       description: product.description,
       style: mapped.style,
       template: product.template,
+      artKind: product.artKind,
       showcaseCollectionHandle: product.showcaseCollectionHandle,
       variants: product.productVariants.map((v) => ({
         shopifyVariantId: toShopifyVariantGid(v.shopifyVariantId),
@@ -165,6 +166,7 @@ export class ProductsService {
       description: product.description,
       style: mapped.style,
       template: product.template,
+      artKind: product.artKind,
       variants: product.productVariants.map((v) => ({
         shopifyVariantId: toShopifyVariantGid(v.shopifyVariantId),
         shopifyVariantTitle: v.shopifyVariantTitle,
@@ -318,6 +320,7 @@ export class ProductsService {
       displayName: product.displayName,
       description: product.description,
       template: product.template,
+      artKind: product.artKind,
       variants: product.creditPackVariants.map((v) => ({
         shopifyVariantId: toShopifyVariantGid(v.shopifyVariantId),
         creditAmount: v.creditAmount,

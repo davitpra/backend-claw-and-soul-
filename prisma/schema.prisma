@@ -311,7 +311,8 @@ model ProductReference {
   displayName              String   @map("display_name")
   description              String?
   styleId                  String?  @map("style_id")
-  template                 String?  @map("template") // storefront template override: Canvas | Poster
+  template                 String?  @map("template") // formato de entrega del storefront: Digital | Canvas | Poster | Accessory | Credits
+  artKind                  String?  @map("art_kind") // contenido: pbn (coloreable) | print (arte terminado); null = sin asignar / no aplica
   showcaseCollectionHandle String?  @map("showcase_collection_handle")
   isActive                 Boolean  @default(true) @map("is_active")
   isPaintByNumbers         Boolean  @default(false) @map("is_paint_by_numbers")

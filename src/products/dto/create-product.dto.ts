@@ -45,12 +45,23 @@ export class CreateProductDto {
 
   @ApiProperty({
     description:
-      'Storefront template override. Null = use default (Canvas) fallback.',
-    enum: ['Canvas', 'Poster', 'Credits', 'Accessory', 'PBN'],
+      'Storefront delivery format override. Null = use default (Canvas) fallback. "PBN" is a legacy alias of "Digital".',
+    enum: ['Digital', 'Canvas', 'Poster', 'Credits', 'Accessory', 'PBN'],
     required: false,
   })
   @IsOptional()
   @IsString()
-  @IsIn(['Canvas', 'Poster', 'Credits', 'Accessory', 'PBN'])
+  @IsIn(['Digital', 'Canvas', 'Poster', 'Credits', 'Accessory', 'PBN'])
   template?: string;
+
+  @ApiProperty({
+    description:
+      'Artwork content: "pbn" (paintable/colorable outline) or "print" (finished art). Null = unassigned / not applicable.',
+    enum: ['pbn', 'print'],
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['pbn', 'print'])
+  artKind?: string;
 }

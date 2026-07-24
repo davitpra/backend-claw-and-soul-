@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   BaseStyleStrategy,
+  DEFAULT_ASPECT_RATIO,
   PipelineContext,
   PipelineResult,
 } from '../pipeline.types';
@@ -129,7 +130,10 @@ export class StyleDrivenPromptMultiStrategy extends BaseStyleStrategy {
     this.logger.log(`[${ctx.generationId}] Final prompt: ${prompt}`);
 
     // aspectRatio from constraints overrides the format's value
-    const aspectRatio = ctx.constraints.aspectRatio ?? ctx.format?.aspectRatio;
+    const aspectRatio =
+      ctx.constraints.aspectRatio ??
+      ctx.format?.aspectRatio ??
+      DEFAULT_ASPECT_RATIO;
 
     // Step 2 — Generate image with Fal.ai (todas las fotos como referencia)
     const falResult = await this.fal.generate({

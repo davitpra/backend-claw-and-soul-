@@ -320,9 +320,7 @@ export class OrdersService {
           : undefined;
       if (perUnit != null) {
         packCredits += perUnit * it.quantity;
-      } else if (
-        !OrdersService.isDigitalTemplate(it.productRef?.template)
-      ) {
+      } else if (!OrdersService.isDigitalTemplate(it.productRef?.template)) {
         regularUnits += it.quantity;
       }
     }

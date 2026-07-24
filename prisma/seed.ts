@@ -110,6 +110,9 @@ async function main() {
     { name: 'museum_20x25',   displayName: '20x25 Museo',    aspectRatio: '4:5', width: 1024, height: 1280, shopifyVariantOption: '20x25' },
     { name: 'museum_30x45',   displayName: '30x45 Museo',    aspectRatio: '2:3', width: 1024, height: 1536, shopifyVariantOption: '30x45' },
     { name: 'museum_40x50',   displayName: '40x50 Museo',    aspectRatio: '4:5', width: 1024, height: 1280, shopifyVariantOption: '40x50' },
+    // Catch-all for single-variant Shopify products (no size option): Shopify
+    // names their placeholder variant "Default Title".
+    { name: 'default_title',  displayName: 'Default 3:4',    aspectRatio: '3:4', width: 1024, height: 1365, shopifyVariantOption: 'Default Title' },
   ];
 
   for (const fmt of formatsData) {

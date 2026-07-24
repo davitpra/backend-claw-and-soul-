@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   BaseStyleStrategy,
+  DEFAULT_ASPECT_RATIO,
   PipelineContext,
   PipelineResult,
 } from '../pipeline.types';
@@ -89,7 +90,10 @@ export class StyleTransferRolesStrategy extends BaseStyleStrategy {
       constraints: ctx.constraints,
     };
 
-    const aspectRatio = ctx.constraints.aspectRatio ?? ctx.format?.aspectRatio;
+    const aspectRatio =
+      ctx.constraints.aspectRatio ??
+      ctx.format?.aspectRatio ??
+      DEFAULT_ASPECT_RATIO;
 
     // Image 1 = style/pose reference, Image 2 = subject identity
     const falResult = await this.fal.generate({

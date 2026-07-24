@@ -7,6 +7,9 @@ import {
   ImageGenConfig,
 } from '@prisma/client';
 
+/** Fallback when neither constraints nor the linked Format provide an aspect ratio. */
+export const DEFAULT_ASPECT_RATIO = '3:4';
+
 export type StyleWithConfigs = Style & {
   visionConfig: VisionConfig | null;
   imageGenConfig: ImageGenConfig | null;

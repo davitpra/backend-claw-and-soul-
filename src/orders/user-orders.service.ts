@@ -10,6 +10,52 @@ import {
   createPaginatedResult,
 } from '../common/utils/pagination.util';
 
+// `select` compartido para los items que ve el cliente: título, imagen propia,
+// generación de IA y —como último fallback— la imagen primaria del estilo del
+// producto (mismo patrón que el admin). No exponemos más estructura del catálogo.
+const THUMB_ITEM_SELECT = {
+  id: true,
+  title: true,
+  imageUrl: true,
+  // `shopifyHandle` + `shopifyVariantId` dejan que el storefront resuelva la
+  // imagen live de Shopify para ítems sin arte propio (p. ej. accesorios sin
+  // estilo ni generación), igual que hace el admin.
+  shopifyVariantId: true,
+  generation: { select: { resultUrl: true, thumbnailUrl: true } },
+  productRef: {
+    select: {
+      shopifyHandle: true,
+      style: {
+        select: {
+          images: {
+            orderBy: [
+              { isPrimary: 'desc' as const },
+              { orderIndex: 'asc' as const },
+            ],
+            take: 1,
+            select: { imageUrl: true },
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.OrderItemSelect;
+
+type ThumbItemRow = Prisma.OrderItemGetPayload<{
+  select: typeof THUMB_ITEM_SELECT;
+}>;
+
+// Aplana `productImageUrl` (imagen del estilo) y `shopifyHandle` a campos planos
+// y descarta la estructura `productRef` anidada antes de devolverla al cliente.
+function toThumbItem(item: ThumbItemRow) {
+  const { productRef, ...rest } = item;
+  return {
+    ...rest,
+    shopifyHandle: productRef?.shopifyHandle ?? null,
+    productImageUrl: productRef?.style?.images?.[0]?.imageUrl ?? null,
+  };
+}
+
 // Endpoints scoped to the authenticated user (storefront account dashboard).
 @Injectable()
 export class UserOrdersService {
@@ -34,14 +80,7 @@ export class UserOrdersService {
           fulfillmentDisplayStatus: true,
           orderStatusUrl: true,
           shopifyCreatedAt: true,
-          items: {
-            select: {
-              id: true,
-              title: true,
-              imageUrl: true,
-              generation: { select: { resultUrl: true, thumbnailUrl: true } },
-            },
-          },
+          items: { select: THUMB_ITEM_SELECT },
         },
       }),
       this.prisma.order.count({ where: { userId } }),
@@ -51,6 +90,7 @@ export class UserOrdersService {
       orders.map((o) => ({
         ...o,
         totalAmount: o.totalAmount.toNumber(),
+        items: o.items.map(toThumbItem),
       })),
       total,
       page,
@@ -88,14 +128,7 @@ export class UserOrdersService {
         shippingAddress: true,
         customerNote: true,
         shopifyCreatedAt: true,
-        items: {
-          select: {
-            id: true,
-            title: true,
-            imageUrl: true,
-            generation: { select: { resultUrl: true, thumbnailUrl: true } },
-          },
-        },
+        items: { select: THUMB_ITEM_SELECT },
       },
     });
 
@@ -113,6 +146,7 @@ export class UserOrdersService {
       subtotalAmount: order.subtotalAmount.toNumber(),
       shippingAmount: order.shippingAmount?.toNumber() ?? null,
       taxAmount: order.taxAmount?.toNumber() ?? null,
+      items: order.items.map(toThumbItem),
     };
   }
 }

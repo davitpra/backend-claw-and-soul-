@@ -16,6 +16,7 @@ import {
   createPaginatedResult,
 } from '../common/utils/pagination.util';
 import { QUEUE_NAMES, JOB_NAMES } from './constants/queues.constants';
+import { USER_GENERATION_SELECT } from './generation-select';
 import { ExpensesService } from '../expenses/expenses.service';
 import { CreditsService } from '../credits/credits.service';
 import {
@@ -137,10 +138,7 @@ export class GenerationsService {
             userSelections: validatedSelections,
           },
         },
-        include: {
-          pet: true,
-          style: true,
-        },
+        select: USER_GENERATION_SELECT,
       });
 
       if (!isExempt) {
@@ -178,10 +176,7 @@ export class GenerationsService {
         orderBy: { createdAt: 'desc' },
         skip,
         take,
-        include: {
-          pet: true,
-          style: true,
-        },
+        select: USER_GENERATION_SELECT,
       }),
       this.prisma.generation.count({ where }),
     ]);
@@ -189,24 +184,35 @@ export class GenerationsService {
     return createPaginatedResult(generations, total, page, limit);
   }
 
-  async findOne(id: string, userId?: string) {
+  // Comprueba que `userId` puede ver la generación y devuelve solo lo necesario
+  // para autorizar. Está separado de `findOne` porque la respuesta que sale al
+  // cliente ya no incluye `userId` (ver USER_GENERATION_SELECT).
+  private async assertAccess(id: string, userId?: string) {
     const generation = await this.prisma.generation.findUnique({
       where: { id },
-      include: {
-        pet: true,
-        style: true,
-      },
+      select: { id: true, userId: true, isPublic: true },
     });
 
     if (!generation) {
       throw new NotFoundException('Generation not found');
     }
 
+    // 404 y no 403: distinguir "existe pero no es tuya" de "no existe" permite
+    // enumerar IDs ajenos.
     if (userId && generation.userId !== userId && !generation.isPublic) {
-      throw new BadRequestException('Access denied');
+      throw new NotFoundException('Generation not found');
     }
 
     return generation;
+  }
+
+  async findOne(id: string, userId?: string) {
+    await this.assertAccess(id, userId);
+
+    return this.prisma.generation.findUniqueOrThrow({
+      where: { id },
+      select: USER_GENERATION_SELECT,
+    });
   }
 
   async updateGenerationStatus(
@@ -256,10 +262,11 @@ export class GenerationsService {
     userId: string,
     updateDto: UpdateGenerationFlagsDto,
   ) {
-    const generation = await this.findOne(id, userId);
+    const generation = await this.assertAccess(id, userId);
 
+    // Las flags solo las cambia el dueño, ni siquiera sobre una pública.
     if (generation.userId !== userId) {
-      throw new BadRequestException('Access denied');
+      throw new NotFoundException('Generation not found');
     }
 
     return this.prisma.generation.update({
@@ -272,18 +279,22 @@ export class GenerationsService {
           isFavorite: updateDto.isFavorite,
         }),
       },
+      select: USER_GENERATION_SELECT,
     });
   }
 
   async deleteGeneration(id: string, userId: string) {
-    const generation = await this.findOne(id, userId);
+    const generation = await this.assertAccess(id, userId);
 
     if (generation.userId !== userId) {
-      throw new BadRequestException('Access denied');
+      throw new NotFoundException('Generation not found');
     }
 
+    // `delete` devuelve la fila borrada completa; proyectarla para no filtrar el
+    // prompt en la respuesta del DELETE.
     return this.prisma.generation.delete({
       where: { id },
+      select: USER_GENERATION_SELECT,
     });
   }
 

@@ -15,6 +15,18 @@ import { CreateStyleDto } from './dto/create-style.dto';
 import { UpdateStyleDto } from './dto/update-style.dto';
 import { UpdateStyleImageDto } from './dto/update-style-image.dto';
 import { derivePreviewUrl } from './style-preview.util';
+import { PUBLIC_STYLE_IMAGE_SELECT, PUBLIC_STYLE_SELECT } from './style-select';
+
+// Los estilos servidos al storefront van proyectados; sus imágenes también.
+const PUBLIC_STYLE_QUERY = {
+  select: {
+    ...PUBLIC_STYLE_SELECT,
+    images: {
+      select: PUBLIC_STYLE_IMAGE_SELECT,
+      orderBy: { orderIndex: 'asc' },
+    },
+  },
+} satisfies { select: Prisma.StyleSelect };
 
 @Injectable()
 export class StylesService {
@@ -31,9 +43,7 @@ export class StylesService {
     const styles = await this.prisma.style.findMany({
       where,
       orderBy: [{ category: 'asc' }, { displayName: 'asc' }],
-      include: {
-        images: { orderBy: { orderIndex: 'asc' } },
-      },
+      ...PUBLIC_STYLE_QUERY,
     });
 
     return styles.map((s) => ({
@@ -45,9 +55,7 @@ export class StylesService {
   async findOne(id: string) {
     const style = await this.prisma.style.findUnique({
       where: { id },
-      include: {
-        images: { orderBy: { orderIndex: 'asc' } },
-      },
+      ...PUBLIC_STYLE_QUERY,
     });
 
     if (!style) {
@@ -79,7 +87,7 @@ export class StylesService {
     const styles = await this.prisma.style.findMany({
       where: { category, isActive: true },
       orderBy: { displayName: 'asc' },
-      include: { images: { orderBy: { orderIndex: 'asc' } } },
+      ...PUBLIC_STYLE_QUERY,
     });
 
     return styles.map((s) => ({
@@ -100,6 +108,7 @@ export class StylesService {
     return this.prisma.styleImage.findMany({
       where,
       orderBy: { orderIndex: 'asc' },
+      select: PUBLIC_STYLE_IMAGE_SELECT,
     });
   }
 
@@ -269,8 +278,23 @@ export class StylesService {
     return this.prisma.styleImage.delete({ where: { id: imgId } });
   }
 
+  // El key de storage no viaja en la proyección pública (`findOne`), así que las
+  // rutas admin que necesitan borrar el archivo anterior lo piden aparte.
+  private async findReferenceStorageKey(styleId: string) {
+    const style = await this.prisma.style.findUnique({
+      where: { id: styleId },
+      select: { styleReferenceStorageKey: true },
+    });
+
+    if (!style) {
+      throw new NotFoundException('Style not found');
+    }
+
+    return style;
+  }
+
   async uploadReferenceImage(styleId: string, file: Express.Multer.File) {
-    const style = await this.findOne(styleId);
+    const style = await this.findReferenceStorageKey(styleId);
 
     if (style.styleReferenceStorageKey) {
       await this.storageService
@@ -292,7 +316,7 @@ export class StylesService {
   }
 
   async removeReferenceImage(styleId: string) {
-    const style = await this.findOne(styleId);
+    const style = await this.findReferenceStorageKey(styleId);
 
     if (style.styleReferenceStorageKey) {
       await this.storageService

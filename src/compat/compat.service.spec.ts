@@ -99,7 +99,9 @@ describe('CompatService', () => {
         'fmt-1',
       );
 
-      expect(result).toEqual([mockStyle]);
+      // El servicio cambia `images` por el `previewUrl` derivado.
+      const { images: _images, ...styleRest } = mockStyle;
+      expect(result).toEqual([{ ...styleRest, previewUrl: null }]);
     });
 
     it('returns empty array when product has no style assigned', async () => {

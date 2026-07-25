@@ -1,8 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { derivePreviewUrl } from '../styles/style-preview.util';
+import { PUBLIC_STYLE_SELECT } from '../styles/style-select';
 
-const STYLE_INCLUDE = {
+// `/compat/styles` es `@Public()`: el estilo va proyectado para no filtrar el
+// promptTemplate ni el resto de la config del pipeline.
+const STYLE_SELECT = {
+  ...PUBLIC_STYLE_SELECT,
   images: {
     where: { isPrimary: true },
     take: 1,
@@ -35,7 +39,7 @@ export class CompatService {
   async getStylesByProductAndFormat(productId: string, _formatId: string) {
     const product = await this.prisma.productReference.findUnique({
       where: { id: productId },
-      include: { style: { include: STYLE_INCLUDE } },
+      include: { style: { select: STYLE_SELECT } },
     });
 
     if (!product) throw new NotFoundException(`Product ${productId} not found`);

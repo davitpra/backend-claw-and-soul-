@@ -5,6 +5,7 @@ import {
   getPaginationParams,
   createPaginatedResult,
 } from '../common/utils/pagination.util';
+import { PUBLIC_GENERATION_SELECT } from '../generations/generation-select';
 
 @Injectable()
 export class GalleryService {
@@ -32,10 +33,7 @@ export class GalleryService {
         orderBy: { createdAt: 'desc' },
         skip,
         take,
-        include: {
-          pet: { select: { name: true, species: true, breed: true } },
-          style: { select: { id: true, name: true, category: true } },
-        },
+        select: PUBLIC_GENERATION_SELECT,
       }),
       this.prisma.generation.count({ where }),
     ]);
@@ -44,19 +42,14 @@ export class GalleryService {
   }
 
   async findOnePublic(id: string) {
-    const generation = await this.prisma.generation.findUnique({
-      where: { id },
-      include: {
-        pet: { select: { name: true, species: true, breed: true } },
-        style: { select: { id: true, name: true, category: true } },
-      },
+    // Los filtros van en el `where`: la proyección pública ya no expone
+    // `isPublic`, así que no se pueden comprobar sobre la fila devuelta.
+    const generation = await this.prisma.generation.findFirst({
+      where: { id, isPublic: true, status: 'completed' },
+      select: PUBLIC_GENERATION_SELECT,
     });
 
-    if (
-      !generation ||
-      !generation.isPublic ||
-      generation.status !== 'completed'
-    ) {
+    if (!generation) {
       throw new NotFoundException('Generation not found');
     }
 

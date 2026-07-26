@@ -94,7 +94,7 @@ export class PaintByNumbersController {
   @ApiOperation({ summary: 'Get a Paint-by-Numbers by id' })
   @ApiResponse({ status: 404, description: 'Not found' })
   findOne(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    return this.pbnService.findOne(id, user.sub);
+    return this.pbnService.findOneForUser(id, user.sub);
   }
 
   @Patch(':id')

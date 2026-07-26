@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Body,
@@ -66,6 +67,44 @@ export class PaintByNumbersController {
     @Body() dto: CreatePaintByNumbersDto,
   ) {
     return this.pbnService.create(
+      user.sub,
+      user.role,
+      {
+        source: files.source?.[0],
+        svg: files.svg?.[0],
+        preview: files.preview?.[0],
+        palette: files.palette?.[0],
+      },
+      dto,
+    );
+  }
+
+  @Put(':id')
+  @ApiOperation({
+    summary: 'Replace a Paint-by-Numbers content (re-saved from the studio)',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiResponse({ status: 200, description: 'PBN updated successfully' })
+  @ApiResponse({
+    status: 404,
+    description: 'Not found or not owned by the user',
+  })
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'source', maxCount: 1 },
+      { name: 'svg', maxCount: 1 },
+      { name: 'preview', maxCount: 1 },
+      { name: 'palette', maxCount: 1 },
+    ]),
+  )
+  replace(
+    @Param('id') id: string,
+    @CurrentUser() user: JwtUser,
+    @UploadedFiles() files: PbnUploadedFiles,
+    @Body() dto: CreatePaintByNumbersDto,
+  ) {
+    return this.pbnService.replaceArtifacts(
+      id,
       user.sub,
       user.role,
       {

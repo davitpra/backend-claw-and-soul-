@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,6 +15,12 @@ import { StorageService } from '../storage/storage.service';
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 /** Longest edge the compressed source is downscaled to, if larger. */
 const SOURCE_MAX_DIMENSION = 2400;
+/**
+ * Obras guardadas (no compradas) que puede acumular una cuenta. Cada PBN arrastra
+ * cuatro artefactos en Cloudinary, así que sin tope una cuenta puede inflar el
+ * storage indefinidamente sin comprar nada.
+ */
+const MAX_PBN_PER_USER = 10;
 import {
   createPaginatedResult,
   getPaginationParams,
@@ -113,13 +120,8 @@ export class PaintByNumbersService {
     if (!files.svg) {
       throw new BadRequestException('The outline SVG is required');
     }
-
-    let config: Prisma.InputJsonValue;
-    try {
-      config = JSON.parse(input.config) as Prisma.InputJsonValue;
-    } catch {
-      throw new BadRequestException('config must be valid JSON');
-    }
+    await this.assertCanSave(userId, userRole);
+    const config = this.parseConfig(input.config);
 
     // Validate optional relations belong to the user before uploading.
     let petId = input.petId ?? null;
@@ -144,6 +146,152 @@ export class PaintByNumbersService {
 
     // Pre-generate the id so artifact keys can be namespaced by the PBN.
     const pbnId = uuidv4();
+    const { source, svg, preview, palette } = await this.uploadArtifacts(
+      pbnId,
+      files,
+    );
+
+    return this.prisma.paintByNumbers.create({
+      data: {
+        id: pbnId,
+        userId,
+        generationId: input.generationId ?? null,
+        petId,
+        config,
+        sourceImageUrl: source?.url ?? null,
+        sourceImageStorageKey: source?.key ?? null,
+        outlineSvgUrl: svg?.url ?? null,
+        outlineSvgStorageKey: svg?.key ?? null,
+        previewUrl: preview?.url ?? null,
+        previewStorageKey: preview?.key ?? null,
+        paletteUrl: palette?.url ?? null,
+        paletteStorageKey: palette?.key ?? null,
+        colorCount: this.parseColorCount(input.colorCount),
+        origin: userRole === 'admin' ? 'admin' : 'customer',
+      },
+    });
+  }
+
+  /**
+   * Tope de obras guardadas por cuenta. Los PBN ya comprados (`status: 'ordered'`)
+   * no consumen cupo: comprar libera espacio. Los admin están exentos, mismo
+   * criterio que en créditos.
+   *
+   * Se llama al principio de `create()`, antes de `uploadArtifacts`: si el
+   * rechazo llegase después habríamos subido cuatro ficheros a Cloudinary que
+   * ninguna fila referencia. El borrado de PBN es duro (ver `delete`), así que
+   * el conteo es exacto sin filtrar nada más.
+   */
+  private async assertCanSave(userId: string, userRole: string): Promise<void> {
+    if (userRole === 'admin') return;
+
+    const count = await this.prisma.paintByNumbers.count({
+      where: { userId, status: { not: 'ordered' } },
+    });
+    if (count >= MAX_PBN_PER_USER) {
+      throw new ConflictException(
+        `You've reached the limit of ${MAX_PBN_PER_USER} saved paintings. Delete one from your gallery to save a new one.`,
+      );
+    }
+  }
+
+  /**
+   * Reemplaza el contenido de un PBN existente con lo que acaba de renderizar el
+   * estudio: sube los artefactos nuevos, pisa `config`/`colorCount` y borra de
+   * storage los que quedaron huérfanos. Es lo que evita que reeditar una obra
+   * desde `/studio?pbnId=…` acabe creando una copia con el mismo source.
+   *
+   * La obra en sí no cambia de dueño ni de origen, así que `userId`,
+   * `generationId`, `petId`, `origin`, `status` e `isPublic` se conservan.
+   *
+   * Excepción: si el PBN ya fue comprado (`status: 'ordered'`) no se toca —
+   * sería alterar el diseño que el cliente pagó y que producción debe imprimir.
+   * En ese caso se guarda una copia nueva y se devuelve esa; el cliente adopta
+   * el id que reciba, así que la regla vive aquí y no en el front.
+   */
+  async replaceArtifacts(
+    id: string,
+    userId: string,
+    userRole: string,
+    files: PbnUploadFiles,
+    input: CreatePbnInput,
+  ) {
+    const existing = await this.findOne(id, userId);
+
+    if (existing.status === 'ordered') {
+      return this.create(userId, userRole, files, {
+        ...input,
+        // La copia cuelga de la misma generación/mascota que el original.
+        generationId: existing.generationId ?? undefined,
+        petId: existing.petId ?? undefined,
+      });
+    }
+
+    if (!files.svg) {
+      throw new BadRequestException('The outline SVG is required');
+    }
+    const config = this.parseConfig(input.config);
+
+    const { source, svg, preview, palette } = await this.uploadArtifacts(
+      id,
+      files,
+    );
+
+    const updated = await this.prisma.paintByNumbers.update({
+      where: { id },
+      data: {
+        config,
+        colorCount: this.parseColorCount(input.colorCount),
+        // Sólo se pisa lo que llegó: un artefacto opcional ausente (p. ej. la
+        // guía de mezcla, que es best-effort) conserva el que ya había.
+        ...(source
+          ? { sourceImageUrl: source.url, sourceImageStorageKey: source.key }
+          : {}),
+        ...(svg
+          ? { outlineSvgUrl: svg.url, outlineSvgStorageKey: svg.key }
+          : {}),
+        ...(preview
+          ? { previewUrl: preview.url, previewStorageKey: preview.key }
+          : {}),
+        ...(palette
+          ? { paletteUrl: palette.url, paletteStorageKey: palette.key }
+          : {}),
+      },
+    });
+
+    // Ya persistido lo nuevo: los assets sustituidos sobran. Best-effort, igual
+    // que en `delete` — un fallo aquí sólo deja basura en Cloudinary.
+    await this.deleteArtifacts([
+      source ? existing.sourceImageStorageKey : null,
+      svg ? existing.outlineSvgStorageKey : null,
+      preview ? existing.previewStorageKey : null,
+      palette ? existing.paletteStorageKey : null,
+    ]);
+
+    return updated;
+  }
+
+  /** `config` viaja como string en el multipart: se valida al parsear. */
+  private parseConfig(raw: string): Prisma.InputJsonValue {
+    try {
+      return JSON.parse(raw) as Prisma.InputJsonValue;
+    } catch {
+      throw new BadRequestException('config must be valid JSON');
+    }
+  }
+
+  private parseColorCount(raw?: string): number | null {
+    if (!raw) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  /**
+   * Sube los artefactos que lleguen bajo `paint-by-numbers/<pbnId>/<kind>/`. La
+   * clave lleva un uuid propio, así que al reemplazar nunca pisa la anterior
+   * (que se borra aparte, ya con la fila actualizada).
+   */
+  private async uploadArtifacts(pbnId: string, files: PbnUploadFiles) {
     const uploadArtifact = async (
       file: Express.Multer.File | undefined,
       kind: string,
@@ -168,29 +316,22 @@ export class PaintByNumbersService {
       uploadArtifact(files.palette, 'palette'),
     ]);
 
-    const colorCount = input.colorCount
-      ? Number.parseInt(input.colorCount, 10)
-      : null;
+    return { source, svg, preview, palette };
+  }
 
-    return this.prisma.paintByNumbers.create({
-      data: {
-        id: pbnId,
-        userId,
-        generationId: input.generationId ?? null,
-        petId,
-        config,
-        sourceImageUrl: source?.url ?? null,
-        sourceImageStorageKey: source?.key ?? null,
-        outlineSvgUrl: svg?.url ?? null,
-        outlineSvgStorageKey: svg?.key ?? null,
-        previewUrl: preview?.url ?? null,
-        previewStorageKey: preview?.key ?? null,
-        paletteUrl: palette?.url ?? null,
-        paletteStorageKey: palette?.key ?? null,
-        colorCount: Number.isNaN(colorCount as number) ? null : colorCount,
-        origin: userRole === 'admin' ? 'admin' : 'customer',
-      },
-    });
+  /** Borrado best-effort de claves de storage: nunca hace fallar al llamante. */
+  private async deleteArtifacts(keys: (string | null)[]) {
+    await Promise.all(
+      keys
+        .filter((k): k is string => Boolean(k))
+        .map((key) =>
+          this.storage.delete(key).catch((err) => {
+            this.logger.warn(
+              `Failed to delete PBN artifact ${key}: ${(err as Error).message}`,
+            );
+          }),
+        ),
+    );
   }
 
   /**
@@ -294,22 +435,12 @@ export class PaintByNumbersService {
   /** Deletes the row and best-effort removes the Cloudinary artifacts. */
   async delete(id: string, userId?: string) {
     const pbn = await this.findOne(id, userId);
-    const keys = [
+    await this.deleteArtifacts([
       pbn.sourceImageStorageKey,
       pbn.outlineSvgStorageKey,
       pbn.previewStorageKey,
       pbn.paletteStorageKey,
-    ].filter((k): k is string => Boolean(k));
-
-    await Promise.all(
-      keys.map((key) =>
-        this.storage.delete(key).catch((err) => {
-          this.logger.warn(
-            `Failed to delete PBN artifact ${key}: ${(err as Error).message}`,
-          );
-        }),
-      ),
-    );
+    ]);
 
     await this.prisma.paintByNumbers.delete({ where: { id } });
     return { success: true };

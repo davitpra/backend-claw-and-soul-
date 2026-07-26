@@ -19,6 +19,63 @@ import {
   getPaginationParams,
 } from '../common/utils/pagination.util';
 
+/**
+ * Whitelist de lo que ve el dueño de un PBN en `GET /paint-by-numbers/:id`.
+ * Explícita a propósito (mismo criterio que `USER_GENERATION_SELECT`): una
+ * columna nueva no se filtra sola al cliente.
+ */
+const USER_PBN_SELECT = {
+  id: true,
+  generationId: true,
+  petId: true,
+  sourceImageUrl: true,
+  outlineSvgUrl: true,
+  previewUrl: true,
+  paletteUrl: true,
+  config: true,
+  colorCount: true,
+  origin: true,
+  status: true,
+  isPublic: true,
+  createdAt: true,
+  pet: { select: { id: true, name: true } },
+  generation: {
+    select: {
+      id: true,
+      pet: { select: { id: true, name: true } },
+      style: { select: { displayName: true, category: true } },
+    },
+  },
+} satisfies Prisma.PaintByNumbersSelect;
+
+/**
+ * Whitelist del listado `GET /paint-by-numbers`. Subconjunto del detalle: sin
+ * `config` (pesado, solo hace falta en la ficha) y sin las claves de storage.
+ * Incluye `pet` y `generation.style` porque la galería titula cada card con el
+ * nombre de la mascota y su estilo. La mascota viaja también dentro de
+ * `generation`: al guardar un PBN no se manda `petId` (ver `useSavePbn` en el
+ * front), así que el `pet` directo es null y el nombre solo se puede resolver a
+ * través de la generación de origen.
+ */
+const USER_PBN_LIST_SELECT = {
+  id: true,
+  sourceImageUrl: true,
+  previewUrl: true,
+  outlineSvgUrl: true,
+  paletteUrl: true,
+  colorCount: true,
+  status: true,
+  createdAt: true,
+  pet: { select: { id: true, name: true } },
+  generation: {
+    select: {
+      id: true,
+      pet: { select: { id: true, name: true } },
+      style: { select: { displayName: true, category: true } },
+    },
+  },
+} satisfies Prisma.PaintByNumbersSelect;
+
 /** Uploaded artifacts for a PBN. All optional except the SVG (master). */
 export interface PbnUploadFiles {
   source?: Express.Multer.File;
@@ -65,12 +122,17 @@ export class PaintByNumbersService {
     }
 
     // Validate optional relations belong to the user before uploading.
+    let petId = input.petId ?? null;
     if (input.generationId) {
       const gen = await this.prisma.generation.findFirst({
         where: { id: input.generationId, userId },
-        select: { id: true },
+        select: { id: true, petId: true },
       });
       if (!gen) throw new BadRequestException('Invalid generationId');
+      // El cliente no manda `petId` (el studio solo conoce la generación), así
+      // que lo heredamos de ella: sin esto el PBN queda huérfano de mascota y la
+      // galería no puede titular la obra con su nombre.
+      petId = petId ?? gen.petId;
     }
     if (input.petId) {
       const pet = await this.prisma.pet.findFirst({
@@ -115,7 +177,7 @@ export class PaintByNumbersService {
         id: pbnId,
         userId,
         generationId: input.generationId ?? null,
-        petId: input.petId ?? null,
+        petId,
         config,
         sourceImageUrl: source?.url ?? null,
         sourceImageStorageKey: source?.key ?? null,
@@ -166,6 +228,7 @@ export class PaintByNumbersService {
     const [items, total] = await Promise.all([
       this.prisma.paintByNumbers.findMany({
         where: { userId },
+        select: USER_PBN_LIST_SELECT,
         orderBy: { createdAt: 'desc' },
         skip,
         take,
@@ -194,13 +257,30 @@ export class PaintByNumbersService {
     return createPaginatedResult(items, total, page, limit);
   }
 
-  /** When userId is provided, ownership is enforced. */
+  /**
+   * When userId is provided, ownership is enforced. Devuelve la fila completa
+   * (incluidas las storage keys que necesita `delete`), así que es de uso
+   * interno y de las rutas admin: para el cliente, `findOneForUser`.
+   */
   async findOne(id: string, userId?: string) {
     const pbn = await this.prisma.paintByNumbers.findUnique({ where: { id } });
     if (!pbn || (userId && pbn.userId !== userId)) {
       throw new NotFoundException('Paint-by-Numbers not found');
     }
     return pbn;
+  }
+
+  /**
+   * Detalle proyectado para el dueño del PBN: fuera `userId` y las storage
+   * keys, y dentro pet + generación de origen (sólo el estilo — el prompt
+   * engineering es IP y no sale de las rutas admin).
+   */
+  async findOneForUser(id: string, userId: string) {
+    await this.findOne(id, userId);
+    return this.prisma.paintByNumbers.findUniqueOrThrow({
+      where: { id },
+      select: USER_PBN_SELECT,
+    });
   }
 
   async updateFlags(id: string, userId: string, isPublic?: boolean) {

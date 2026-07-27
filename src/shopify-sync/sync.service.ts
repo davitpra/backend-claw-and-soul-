@@ -158,12 +158,30 @@ export class SyncService implements OnApplicationBootstrap {
       const shopifyProducts = await this.shopifyApiService.fetchAllProducts();
       productsChecked = shopifyProducts.length;
 
+      // El eje de contenido vive en el metafield custom.art_kind, que el REST
+      // no devuelve. Si esta llamada auxiliar falla NO abortamos el sync ni
+      // pasamos null: dejaríamos la configuración de todos los productos en
+      // blanco. Se sigue sin tocar la columna y el próximo sync la pone al día.
+      let artKindMap: Map<string, string | null> | null = null;
+      try {
+        artKindMap = await this.shopifyApiService.fetchArtKindMap();
+      } catch (err) {
+        const msg = `Failed to fetch custom.art_kind metafields: ${(err as Error).message}`;
+        this.logger.error(msg);
+        errors.push(msg);
+      }
+
       const shopifyIds = new Set<string>();
 
       for (const product of shopifyProducts) {
         shopifyIds.add(String(product.id));
         try {
-          const result = await this.productSyncService.upsertProduct(product);
+          const result = await this.productSyncService.upsertProduct(
+            product,
+            artKindMap
+              ? (artKindMap.get(String(product.id)) ?? null)
+              : undefined,
+          );
           if (result.action === 'created') productsCreated++;
           else productsUpdated++;
 

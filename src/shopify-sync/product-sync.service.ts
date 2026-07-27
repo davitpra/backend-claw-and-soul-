@@ -4,6 +4,7 @@ import {
   ShopifyProductPayload,
   ShopifyVariant,
 } from './dto/shopify-product.dto';
+import { normalizeArtKind } from './art-kind.util';
 
 function normalizeVariantOption(s: string | null | undefined): string {
   return (s ?? '')
@@ -21,8 +22,16 @@ export class ProductSyncService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * @param artKind valor crudo del metafield `custom.art_kind`, que es la fuente
+   * de verdad del eje de contenido. Los tres estados importan:
+   * `undefined` = no se pudo averiguar → la columna no se toca;
+   * `null` = Shopify confirma que no tiene metafield → se limpia;
+   * string = se normaliza y se escribe.
+   */
   async upsertProduct(
     shopifyProduct: ShopifyProductPayload,
+    artKind?: string | null,
   ): Promise<{ action: 'created' | 'updated'; id: string }> {
     const shopifyProductId = String(shopifyProduct.id);
     const data = {
@@ -31,6 +40,7 @@ export class ProductSyncService {
       displayName: shopifyProduct.title,
       description: this.stripHtml(shopifyProduct.body_html),
       isActive: shopifyProduct.status === 'active',
+      ...(artKind !== undefined ? { artKind: normalizeArtKind(artKind) } : {}),
     };
 
     const existing = await this.prisma.productReference.findUnique({

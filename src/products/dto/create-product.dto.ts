@@ -54,14 +54,8 @@ export class CreateProductDto {
   @IsIn(['Digital', 'Canvas', 'Poster', 'Credits', 'Accessory', 'PBN'])
   template?: string;
 
-  @ApiProperty({
-    description:
-      'Artwork content: "pbn" (paintable/colorable outline) or "print" (finished art). Null = unassigned / not applicable.',
-    enum: ['pbn', 'print'],
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  @IsIn(['pbn', 'print'])
-  artKind?: string;
+  // `artKind` (el eje de contenido: pbn | print) NO se acepta aquí a propósito:
+  // su fuente de verdad es el metafield `custom.art_kind` de Shopify y solo lo
+  // escribe el sync (ver shopify-sync/product-sync.service.ts). Como el
+  // ValidationPipe global usa forbidNonWhitelisted, mandarlo devuelve 400.
 }

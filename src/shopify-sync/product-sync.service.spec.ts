@@ -86,6 +86,66 @@ describe('ProductSyncService', () => {
 
       expect(result).toEqual({ action: 'updated', id: 'ref-1' });
     });
+
+    // El eje de contenido vive en el metafield custom.art_kind. Los tres
+    // estados del parámetro tienen semánticas distintas y no intercambiables.
+    describe('artKind', () => {
+      const payload = {
+        id: 123,
+        handle: 'my-poster',
+        title: 'My Poster',
+        body_html: '',
+        status: 'active',
+        variants: [],
+      };
+
+      beforeEach(() => {
+        mockPrisma.productReference.findUnique.mockResolvedValue({
+          id: 'ref-1',
+          isActive: true,
+        });
+        mockPrisma.productReference.update.mockResolvedValue({});
+        mockPrisma.auditLog.create.mockResolvedValue({});
+      });
+
+      const dataOfLastUpdate = (): Record<string, unknown> => {
+        const calls = mockPrisma.productReference.update.mock.calls as Array<
+          [{ data: Record<string, unknown> }]
+        >;
+        return calls[0][0].data;
+      };
+
+      it('leaves the column untouched when the metafield could not be fetched', async () => {
+        await service.upsertProduct(payload);
+
+        expect(dataOfLastUpdate()).not.toHaveProperty('artKind');
+      });
+
+      it('clears the column when Shopify has no metafield', async () => {
+        await service.upsertProduct(payload, null);
+
+        expect(dataOfLastUpdate()).toMatchObject({ artKind: null });
+      });
+
+      // Shopify guarda la etiqueta visible de la definición ("PBN", "Print art"),
+      // no el valor canónico: ambas tienen que aterrizar en pbn/print.
+      it.each([
+        ['  PBN ', 'pbn'],
+        ['Paint by Numbers', 'pbn'],
+        ['Print art', 'print'],
+        ['print', 'print'],
+      ])('writes the normalized value for %p', async (raw, expected) => {
+        await service.upsertProduct(payload, raw);
+
+        expect(dataOfLastUpdate()).toMatchObject({ artKind: expected });
+      });
+
+      it('stores null for an unknown metafield value', async () => {
+        await service.upsertProduct(payload, 'watercolor');
+
+        expect(dataOfLastUpdate()).toMatchObject({ artKind: null });
+      });
+    });
   });
 
   describe('syncVariants', () => {

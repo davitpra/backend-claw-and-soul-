@@ -51,9 +51,9 @@ async function bootstrap() {
     new TransformInterceptor(), // Transform interceptor for consistent response formatting
   );
 
-  // CORS. Besides FRONTEND_URL — which ./tunnel.sh rewrites to the cloudflared
-  // URL — the local dev origins stay allowed outside production, so a leftover
-  // tunnel value in .env can't lock out http://localhost:3000.
+  // CORS. Outside production the local dev origins stay allowed on top of
+  // FRONTEND_URL, so pointing that variable at some other host (a preview
+  // deploy, a device on the LAN) can't lock out http://localhost:3000.
   const localOrigins = ['http://localhost:3000', 'http://127.0.0.1:3000'];
   // Origin headers never carry a trailing slash; .env values sometimes do.
   const configuredOrigin = process.env.FRONTEND_URL?.replace(/\/+$/, '');

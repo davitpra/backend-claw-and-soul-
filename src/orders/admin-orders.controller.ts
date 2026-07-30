@@ -65,6 +65,20 @@ export class AdminOrdersController {
   @ApiQuery({ name: 'dateFrom', required: false, type: String })
   @ApiQuery({ name: 'dateTo', required: false, type: String })
   @ApiQuery({ name: 'q', required: false, type: String })
+  @ApiQuery({
+    name: 'sort',
+    required: false,
+    enum: [
+      'orderNumber',
+      'customer',
+      'items',
+      'total',
+      'payment',
+      'shopify',
+      'date',
+    ],
+  })
+  @ApiQuery({ name: 'order', required: false, enum: ['asc', 'desc'] })
   list(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
@@ -74,6 +88,8 @@ export class AdminOrdersController {
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('q') q?: string,
+    @Query('sort') sort?: string,
+    @Query('order') order?: string,
   ) {
     return this.adminOrdersService.listOrders(page, limit, {
       status,
@@ -82,6 +98,8 @@ export class AdminOrdersController {
       dateFrom,
       dateTo,
       q,
+      sort,
+      order,
     });
   }
 

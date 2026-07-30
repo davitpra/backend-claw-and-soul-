@@ -31,13 +31,30 @@ export class AdminUsersController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({
+    name: 'sort',
+    required: false,
+    enum: [
+      'name',
+      'email',
+      'credits',
+      'pets',
+      'generations',
+      'pbn',
+      'orders',
+      'lastActivity',
+    ],
+  })
+  @ApiQuery({ name: 'order', required: false, enum: ['asc', 'desc'] })
   @ApiResponse({ status: 200, description: 'Users list retrieved' })
   list(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
     @Query('search') search?: string,
+    @Query('sort') sort?: string,
+    @Query('order') order?: string,
   ) {
-    return this.usersService.listUsers(page, limit, search);
+    return this.usersService.listUsers(page, limit, { search, sort, order });
   }
 
   @Get(':id')
@@ -74,12 +91,33 @@ export class AdminUsersController {
     return this.usersService.getUserOrders(id, page, limit);
   }
 
+  @Get(':id/paint-by-numbers')
+  @ApiOperation({
+    summary: 'Get saved Paint-by-Numbers for a user (paginated)',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'User paint-by-numbers retrieved' })
+  paintByNumbers(
+    @Param('id') id: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(24), ParseIntPipe) limit: number,
+  ) {
+    return this.usersService.getUserPaintByNumbers(id, page, limit);
+  }
+
   @Get(':id/credit-transactions')
   @ApiOperation({
     summary: 'Get credit ledger movements for a user (paginated)',
   })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({
+    name: 'sort',
+    required: false,
+    enum: ['date', 'reason', 'note', 'amount'],
+  })
+  @ApiQuery({ name: 'order', required: false, enum: ['asc', 'desc'] })
   @ApiResponse({
     status: 200,
     description: 'User credit transactions retrieved',
@@ -88,7 +126,12 @@ export class AdminUsersController {
     @Param('id') id: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('sort') sort?: string,
+    @Query('order') order?: string,
   ) {
-    return this.usersService.getUserCreditTransactions(id, page, limit);
+    return this.usersService.getUserCreditTransactions(id, page, limit, {
+      sort,
+      order,
+    });
   }
 }

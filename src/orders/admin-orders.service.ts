@@ -1,11 +1,46 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   getPaginationParams,
   createPaginatedResult,
 } from '../common/utils/pagination.util';
+import { resolveOrderBy, SortDirection } from '../common/utils/sorting.util';
 import { ExpensesService } from '../expenses/expenses.service';
 import { PRODUCTION_QUEUE_STATUSES } from './production-status.util';
+
+type OrderOrderBy =
+  | Prisma.OrderOrderByWithRelationInput
+  | Prisma.OrderOrderByWithRelationInput[];
+
+/**
+ * Columnas por las que la tabla de pedidos del admin puede ordenar. Las claves
+ * son las que viaja el param `sort`; deben coincidir con los `sortKey` de
+ * `admin/orders/page.tsx` en el front.
+ *
+ * `nulls: 'last'` en las columnas nullable evita que Postgres suba los NULL al
+ * frente al ordenar DESC. "Producción" no está: ese estado lo deriva el front de
+ * los items del pedido (con un valor `mixed` propio), no es un campo.
+ */
+const ORDER_BY_FIELDS: Record<string, (dir: SortDirection) => OrderOrderBy> = {
+  orderNumber: (dir) => ({ orderNumber: dir }),
+  // La celda muestra `customerName || customerEmail`, así que el email hace de
+  // segundo criterio para los pedidos de invitados (sin nombre).
+  customer: (dir) => [
+    { customerName: { sort: dir, nulls: 'last' } },
+    { customerEmail: { sort: dir, nulls: 'last' } },
+  ],
+  items: (dir) => ({ items: { _count: dir } }),
+  total: (dir) => ({ totalAmount: dir }),
+  payment: (dir) => ({ financialStatus: { sort: dir, nulls: 'last' } }),
+  shopify: (dir) => [
+    { fulfillmentDisplayStatus: { sort: dir, nulls: 'last' } },
+    { fulfillmentStatus: { sort: dir, nulls: 'last' } },
+  ],
+  date: (dir) => ({ shopifyCreatedAt: dir }),
+};
+
+const DEFAULT_ORDER_BY: OrderOrderBy = { shopifyCreatedAt: 'desc' };
 
 @Injectable()
 export class AdminOrdersService {
@@ -26,6 +61,8 @@ export class AdminOrdersService {
       dateFrom?: string;
       dateTo?: string;
       q?: string;
+      sort?: string;
+      order?: string;
     } = {},
   ) {
     const { skip, take } = getPaginationParams(page, limit);
@@ -64,12 +101,19 @@ export class AdminOrdersService {
           : opts.fulfillmentStatus;
     }
 
+    const orderBy = resolveOrderBy(
+      ORDER_BY_FIELDS,
+      DEFAULT_ORDER_BY,
+      opts.sort,
+      opts.order,
+    );
+
     const [orders, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
         skip,
         take,
-        orderBy: { shopifyCreatedAt: 'desc' },
+        orderBy,
         select: {
           id: true,
           orderNumber: true,

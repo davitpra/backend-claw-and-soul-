@@ -5,9 +5,10 @@ import { AdminStatsService } from './admin-stats.service';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminUsersService } from './admin-users.service';
 import { OrdersModule } from '../orders/orders.module';
+import { PaintByNumbersModule } from '../paint-by-numbers/paint-by-numbers.module';
 
 @Module({
-  imports: [PrismaModule, OrdersModule],
+  imports: [PrismaModule, OrdersModule, PaintByNumbersModule],
   controllers: [AdminStatsController, AdminUsersController],
   providers: [AdminStatsService, AdminUsersService],
 })

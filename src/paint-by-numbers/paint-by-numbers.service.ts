@@ -72,6 +72,9 @@ const USER_PBN_LIST_SELECT = {
   paletteUrl: true,
   colorCount: true,
   status: true,
+  // `origin` distingue el PBN que guardó el cliente del que montó un admin desde
+  // el estudio de un pedido; lo pinta la pestaña PBN de la ficha de usuario.
+  origin: true,
   createdAt: true,
   pet: { select: { id: true, name: true } },
   generation: {

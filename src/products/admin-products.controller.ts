@@ -21,7 +21,6 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { SetPbnProductDto } from './dto/set-pbn-product.dto';
 import { SetCreditPackProductDto } from './dto/set-credit-pack-product.dto';
-import { SetAccessoryProductDto } from './dto/set-accessory-product.dto';
 import { SetCreditPackVariantsDto } from './dto/set-credit-pack-variants.dto';
 import { LinkVariantDto } from './dto/link-variant.dto';
 import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
@@ -275,18 +274,9 @@ export class AdminProductsController {
     return this.productsService.setCreditPackProduct(dto.productId);
   }
 
-  @Patch(':productId/accessory')
-  @ApiOperation({
-    summary: 'Mark or unmark a product as a PBN accessory (not unique)',
-  })
-  @ApiResponse({ status: 200, description: 'Accessory flag updated' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  setAccessoryProduct(
-    @Param('productId') productId: string,
-    @Body() dto: SetAccessoryProductDto,
-  ) {
-    return this.productsService.setAccessoryProduct(productId, dto.isAccessory);
-  }
+  // No hay endpoint para marcar accesorios: `isAccessory` lo escribe solo el sync
+  // desde el metafield `custom.art_kind` de Shopify (ver shopify-sync/
+  // art-kind.util.ts), así que cualquier escritura manual la revertiría.
 
   @Get(':productId/credit-pack-variants')
   @ApiOperation({

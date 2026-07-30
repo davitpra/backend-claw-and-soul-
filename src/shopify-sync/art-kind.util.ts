@@ -23,22 +23,54 @@ const ART_KIND_ALIASES: Record<string, string> = {
 };
 
 /**
- * Normaliza el valor del metafield `custom.art_kind` de Shopify.
- * Devuelve 'pbn' | 'print', o null si viene vacío o con un valor desconocido
- * (Shopify acepta texto libre si la definición no tiene validación de lista).
+ * Escrituras del mismo metafield que marcan un accesorio. No son un contenido de
+ * obra: los accesorios (pinceles, caballetes…) no llevan arte, así que este valor
+ * NO aterriza en `artKind` sino en `ProductReference.isAccessory`. Mismo criterio
+ * de alias que arriba — la tienda guarda la etiqueta visible, no el valor interno.
  */
-export function normalizeArtKind(value?: string | null): string | null {
-  const key = (value ?? '')
+const ACCESSORY_ALIASES = new Set([
+  'accessory',
+  'accesory',
+  'accessories',
+  'accesorio',
+  'accesorios',
+]);
+
+/** Forma comparable de un valor del metafield: minúsculas y separadores a un espacio. */
+function canonicalize(value?: string | null): string {
+  return (value ?? '')
     .trim()
     .toLowerCase()
     .replace(/[-_\s]+/g, ' ');
+}
+
+/**
+ * Normaliza el valor del metafield `custom.art_kind` de Shopify.
+ * Devuelve 'pbn' | 'print', o null si viene vacío, si marca un accesorio (que no
+ * es un contenido de obra: ver `isAccessoryArtKind`) o si trae un valor
+ * desconocido (Shopify acepta texto libre si la definición no valida la lista).
+ */
+export function normalizeArtKind(value?: string | null): string | null {
+  const key = canonicalize(value);
   if (!key) return null;
 
   const match = ART_KIND_ALIASES[key];
   if (match) return match;
 
+  // Valor conocido pero de otro eje: se enruta a isAccessory, no se avisa.
+  if (ACCESSORY_ALIASES.has(key)) return null;
+
   logger.warn(
     `Unknown custom.art_kind value "${value}" — expected one of ${Object.keys(ART_KIND_ALIASES).join(', ')}; storing null`,
   );
   return null;
+}
+
+/**
+ * ¿El valor del metafield marca al producto como accesorio? Es la fuente de
+ * verdad de `ProductReference.isAccessory`, que a su vez decide en qué tabla del
+ * admin cae el producto y que su OrderItem entre a producción directo en `draft`.
+ */
+export function isAccessoryArtKind(value?: string | null): boolean {
+  return ACCESSORY_ALIASES.has(canonicalize(value));
 }

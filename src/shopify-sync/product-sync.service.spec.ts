@@ -115,16 +115,20 @@ describe('ProductSyncService', () => {
         return calls[0][0].data;
       };
 
-      it('leaves the column untouched when the metafield could not be fetched', async () => {
+      it('leaves the columns untouched when the metafield could not be fetched', async () => {
         await service.upsertProduct(payload);
 
         expect(dataOfLastUpdate()).not.toHaveProperty('artKind');
+        expect(dataOfLastUpdate()).not.toHaveProperty('isAccessory');
       });
 
-      it('clears the column when Shopify has no metafield', async () => {
+      it('clears the columns when Shopify has no metafield', async () => {
         await service.upsertProduct(payload, null);
 
-        expect(dataOfLastUpdate()).toMatchObject({ artKind: null });
+        expect(dataOfLastUpdate()).toMatchObject({
+          artKind: null,
+          isAccessory: false,
+        });
       });
 
       // Shopify guarda la etiqueta visible de la definición ("PBN", "Print art"),
@@ -137,14 +141,34 @@ describe('ProductSyncService', () => {
       ])('writes the normalized value for %p', async (raw, expected) => {
         await service.upsertProduct(payload, raw);
 
-        expect(dataOfLastUpdate()).toMatchObject({ artKind: expected });
+        expect(dataOfLastUpdate()).toMatchObject({
+          artKind: expected,
+          isAccessory: false,
+        });
       });
 
       it('stores null for an unknown metafield value', async () => {
         await service.upsertProduct(payload, 'watercolor');
 
-        expect(dataOfLastUpdate()).toMatchObject({ artKind: null });
+        expect(dataOfLastUpdate()).toMatchObject({
+          artKind: null,
+          isAccessory: false,
+        });
       });
+
+      // "Accessory" es el otro valor del mismo metafield, pero no es un contenido
+      // de obra: marca la familia de producto y va a su propia columna.
+      it.each([['Accessory'], ['accesorio'], [' Accessories ']])(
+        'flags the product as accessory for %p without touching artKind',
+        async (raw) => {
+          await service.upsertProduct(payload, raw);
+
+          expect(dataOfLastUpdate()).toMatchObject({
+            artKind: null,
+            isAccessory: true,
+          });
+        },
+      );
     });
   });
 

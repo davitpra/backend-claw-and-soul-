@@ -18,6 +18,7 @@ import { PaintByNumbersModule } from '../paint-by-numbers/paint-by-numbers.modul
 import { ImageEnhancementService } from './image-enhancement.service';
 import { ExpensesModule } from '../expenses/expenses.module';
 import { CreditsModule } from '../credits/credits.module';
+import { FxModule } from '../fx/fx.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { CreditsModule } from '../credits/credits.module';
     PaintByNumbersModule,
     ExpensesModule,
     CreditsModule,
+    FxModule,
   ],
   controllers: [
     ShopifyOrdersWebhookController,

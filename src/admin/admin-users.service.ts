@@ -224,6 +224,10 @@ export class AdminUsersService {
     return this.adminOrdersService.getUserOrders(userId, page, limit);
   }
 
+  async getUserRevenue(userId: string) {
+    return this.adminOrdersService.getUserRevenue(userId);
+  }
+
   /**
    * PBNs guardados del usuario. La consulta ya existe user-scoped (la usa
    * `GET /paint-by-numbers` con el id del JWT); aquí sólo se reexpone con el id

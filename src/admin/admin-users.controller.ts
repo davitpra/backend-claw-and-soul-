@@ -115,6 +115,13 @@ export class AdminUsersController {
     return this.usersService.getUserOrders(id, page, limit);
   }
 
+  @Get(':id/revenue')
+  @ApiOperation({ summary: 'Get paid-order revenue totals for a user' })
+  @ApiResponse({ status: 200, description: 'User revenue retrieved' })
+  revenue(@Param('id') id: string) {
+    return this.usersService.getUserRevenue(id);
+  }
+
   @Get(':id/paint-by-numbers')
   @ApiOperation({
     summary: 'Get saved Paint-by-Numbers for a user (paginated)',

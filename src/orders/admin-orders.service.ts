@@ -6,7 +6,8 @@ import {
   createPaginatedResult,
 } from '../common/utils/pagination.util';
 import { resolveOrderBy, SortDirection } from '../common/utils/sorting.util';
-import { ExpensesService } from '../expenses/expenses.service';
+import { BASE_CURRENCY, ExpensesService } from '../expenses/expenses.service';
+import { FxRateService } from '../fx/fx-rate.service';
 import { PRODUCTION_QUEUE_STATUSES } from './production-status.util';
 
 type OrderOrderBy =
@@ -49,6 +50,7 @@ export class AdminOrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly expensesService: ExpensesService,
+    private readonly fxRate: FxRateService,
   ) {}
 
   async listOrders(
@@ -358,9 +360,14 @@ export class AdminOrdersService {
     };
   }
 
-  async getUserOrders(userId: string, page = 1, limit = 10) {
-    const { skip, take } = getPaginationParams(page, limit);
-
+  /**
+   * Pedidos atribuibles a un usuario: los suyos más los que hizo como invitado
+   * con el mismo email (`userId` es nullable). Cualquier lectura o agregación
+   * por usuario debe partir de aquí o dejará fuera los de invitado.
+   */
+  private async userOrdersWhere(
+    userId: string,
+  ): Promise<Prisma.OrderWhereInput> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { email: true },
@@ -370,9 +377,13 @@ export class AdminOrdersService {
       ? { customerEmail: { equals: user.email, mode: 'insensitive' as const } }
       : {};
 
-    const where = {
-      OR: [{ userId }, emailFilter],
-    };
+    return { OR: [{ userId }, emailFilter] };
+  }
+
+  async getUserOrders(userId: string, page = 1, limit = 10) {
+    const { skip, take } = getPaginationParams(page, limit);
+
+    const where = await this.userOrdersWhere(userId);
 
     const [orders, total] = await Promise.all([
       this.prisma.order.findMany({
@@ -425,5 +436,64 @@ export class AdminOrdersService {
       page,
       limit,
     );
+  }
+
+  /**
+   * Lo facturado por un cliente, en la moneda base. Cuentan solo los pedidos
+   * `paid`, el mismo criterio que la métrica global de ingresos, para que el
+   * número de la ficha cuadre con el del dashboard.
+   *
+   * Cada pedido guarda su propia moneda, así que un `_sum` plano mezclaría
+   * divisas: se agrupa por moneda y se convierte cubo a cubo.
+   */
+  async getUserRevenue(userId: string) {
+    const where: Prisma.OrderWhereInput = {
+      ...(await this.userOrdersWhere(userId)),
+      financialStatus: 'paid',
+    };
+
+    const groups = await this.prisma.order.groupBy({
+      by: ['currency'],
+      where,
+      _sum: { totalAmount: true },
+      _count: { _all: true },
+    });
+
+    let total = 0;
+    let orderCount = 0;
+    const unconvertedCurrencies: string[] = [];
+
+    for (const group of groups) {
+      const amount = group._sum.totalAmount?.toNumber() ?? 0;
+      orderCount += group._count._all;
+
+      if (group.currency === BASE_CURRENCY) {
+        total += amount;
+        continue;
+      }
+
+      const converted = await this.fxRate.convert(
+        amount,
+        group.currency,
+        BASE_CURRENCY,
+      );
+
+      if (converted) {
+        total += converted.amount;
+      } else {
+        // Sin tipo de cambio se suma el importe crudo (igual que hace
+        // `ExpensesService.customerSummary`) y se declara la moneda: mejor un
+        // total con la salvedad a la vista que un hueco silencioso.
+        total += amount;
+        unconvertedCurrencies.push(group.currency);
+      }
+    }
+
+    return {
+      baseCurrency: BASE_CURRENCY,
+      total,
+      orderCount,
+      unconvertedCurrencies,
+    };
   }
 }

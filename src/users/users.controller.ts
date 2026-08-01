@@ -9,7 +9,9 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
@@ -20,9 +22,11 @@ import {
 } from '@nestjs/swagger';
 import { v4 as uuidv4 } from 'uuid';
 import { UsersService } from './users.service';
+import { AccountStatusService } from './account-status.service';
 import { StorageService } from '../storage/storage.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
@@ -34,6 +38,7 @@ import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
+    private readonly accountStatus: AccountStatusService,
     private readonly storageService: StorageService,
   ) {}
 
@@ -66,6 +71,29 @@ export class UsersController {
       changePasswordDto.currentPassword,
       changePasswordDto.newPassword,
     );
+  }
+
+  @Delete('me')
+  @ApiOperation({ summary: 'Delete the current user account' })
+  @ApiResponse({ status: 200, description: 'Account scheduled for deletion' })
+  @ApiResponse({ status: 401, description: 'Confirmation did not match' })
+  async deleteAccount(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: DeleteAccountDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.usersService.assertCanDeleteAccount(user.sub, dto);
+    await this.accountStatus.softDelete(user.sub, { actor: 'self' });
+
+    // El soft-delete ya revocó los refresh tokens; las cookies se limpian igual
+    // que en logout para que el navegador no siga mandando un access token vivo.
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
+
+    return {
+      message:
+        'Your account has been deleted. Personal data is permanently erased after 30 days.',
+    };
   }
 
   @Post('me/avatar')

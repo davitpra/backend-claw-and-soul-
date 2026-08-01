@@ -21,7 +21,22 @@ model User {
   avatarStorageKey String?   @map("avatar_storage_key")
   role             String    @default("user") // Enum: user, premium, admin
   emailVerified    Boolean   @default(false) @map("email_verified")
+  // Invariante: isActive === (status === 'active'). Se conserva como campo propio
+  // porque el login y varias vistas ya lo leen; AccountStatusService es el único
+  // que escribe ambos, siempre a la vez.
   isActive         Boolean   @default(true) @map("is_active")
+  // Ciclo de vida de la cuenta: active | banned | inactive | deleted
+  //   banned   → suspensión manual del admin (reversible)
+  //   inactive → baja automática por inactividad (se reactiva sola al loguear)
+  //   deleted  → baja lógica; a los 30 días el cron de purga anonimiza el PII
+  status           String    @default("active")
+  statusReason     String?   @map("status_reason")
+  statusChangedAt  DateTime? @map("status_changed_at")
+  // User.id del admin que ejecutó el cambio; null si lo hizo el cron o el propio
+  // usuario. Sin FK a propósito: una auto-relación aquí complicaría los borrados.
+  statusChangedBy  String?   @map("status_changed_by")
+  deletedAt        DateTime? @map("deleted_at")
+  anonymizedAt     DateTime? @map("anonymized_at")
   // Saldo de créditos de generación. Es la fuente rápida de lectura; la suma de
   // creditTransactions debe cuadrar con este valor (invariante mantenido en
   // CreditsService). Default 0: el bono de registro entra por el ledger.
@@ -44,6 +59,8 @@ model User {
   @@index([email])
   @@index([role])
   @@index([googleId])
+  @@index([status])
+  @@index([deletedAt])
   @@map("users")
 }
 

@@ -34,3 +34,21 @@ Implements the complete authentication flow with JWT tokens stored in httpOnly c
 - **Session Limiting**: Max 5 active refresh tokens per user; oldest are revoked when exceeded.
 - **Automatic Cleanup**: Expired and revoked tokens are deleted from the DB on each login/register.
 - **No Credit System**: All generations are free and unlimited. Registration does not initialize credits.
+
+## Account status enforcement
+
+`User.status` (`active | banned | inactive | deleted`) is written only by
+`AccountStatusService` (`users/account-status.service.ts`). Auth enforces it in two places:
+
+- `login()` / `loginWithGoogle()` → `assertCanLogIn()`. `banned` returns
+  `Account suspended`; `deleted` returns `Invalid credentials` so the response does not
+  reveal that the account ever existed; `inactive` (automatic deactivation after
+  `INACTIVITY_MONTHS` without a login) **reactivates itself** — logging back in is proof
+  enough that the account is still in use, and there is no email provider to ask for a
+  separate confirmation.
+- `refreshToken()` re-reads `User.status` from the DB and revokes every session if the
+  account is no longer active.
+
+`JwtStrategy.validate()` deliberately does **not** hit the DB — that would add a query to
+every single request. Because status changes revoke all refresh tokens, the residual window
+for an access token already in the wild is at most 15 minutes (its lifetime).

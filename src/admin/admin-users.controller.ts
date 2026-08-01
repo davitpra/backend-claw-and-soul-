@@ -1,7 +1,11 @@
 import {
+  Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
+  Post,
   Query,
   UseGuards,
   ParseIntPipe,
@@ -15,8 +19,13 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { AdminUsersService } from './admin-users.service';
+import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { DeleteUserDto } from './dto/delete-user.dto';
+import { AccountStatusService } from '../users/account-status.service';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
+import type { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 @ApiTags('admin-users')
 @ApiBearerAuth()
@@ -24,13 +33,22 @@ import { RolesGuard } from '../common/guards/roles.guard';
 @UseGuards(RolesGuard)
 @Roles('admin')
 export class AdminUsersController {
-  constructor(private readonly usersService: AdminUsersService) {}
+  constructor(
+    private readonly usersService: AdminUsersService,
+    private readonly accountStatus: AccountStatusService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List all users (paginated, searchable)' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['all', 'active', 'banned', 'inactive', 'deleted'],
+    description: 'Sin este parámetro se ocultan las cuentas dadas de baja.',
+  })
   @ApiQuery({
     name: 'sort',
     required: false,
@@ -53,8 +71,14 @@ export class AdminUsersController {
     @Query('search') search?: string,
     @Query('sort') sort?: string,
     @Query('order') order?: string,
+    @Query('status') status?: string,
   ) {
-    return this.usersService.listUsers(page, limit, { search, sort, order });
+    return this.usersService.listUsers(page, limit, {
+      search,
+      sort,
+      order,
+      status,
+    });
   }
 
   @Get(':id')
@@ -133,5 +157,59 @@ export class AdminUsersController {
       sort,
       order,
     });
+  }
+
+  @Patch(':id/status')
+  @ApiOperation({
+    summary: 'Suspend, reactivate or deactivate a user account',
+    description:
+      'Cerrar una cuenta revoca todas sus sesiones. La ventana residual del access token ya emitido es de 15 minutos.',
+  })
+  @ApiResponse({ status: 200, description: 'Status updated' })
+  @ApiResponse({ status: 400, description: 'Invalid transition' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  setStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserStatusDto,
+    @CurrentUser() admin: JwtPayload,
+  ) {
+    return this.accountStatus.setStatus(id, dto.status, {
+      reason: dto.reason,
+      actorId: admin.sub,
+    });
+  }
+
+  @Delete(':id')
+  @ApiOperation({
+    summary: 'Soft-delete a user account',
+    description:
+      'Bloquea el acceso y arranca la ventana de 30 días tras la cual se anonimiza el PII. No borra generaciones, PBN ni pedidos.',
+  })
+  @ApiResponse({ status: 200, description: 'Account deleted' })
+  @ApiResponse({ status: 400, description: 'Account already deleted' })
+  softDelete(
+    @Param('id') id: string,
+    @Body() dto: DeleteUserDto,
+    @CurrentUser() admin: JwtPayload,
+  ) {
+    return this.accountStatus.softDelete(id, {
+      actor: 'admin',
+      actorId: admin.sub,
+      reason: dto.reason,
+    });
+  }
+
+  @Post(':id/restore')
+  @ApiOperation({
+    summary: 'Restore a soft-deleted account',
+    description: 'Imposible una vez que el cron de purga la ha anonimizado.',
+  })
+  @ApiResponse({ status: 201, description: 'Account restored' })
+  @ApiResponse({
+    status: 400,
+    description: 'Account is not deleted or was anonymized',
+  })
+  restore(@Param('id') id: string, @CurrentUser() admin: JwtPayload) {
+    return this.accountStatus.restore(id, admin.sub);
   }
 }

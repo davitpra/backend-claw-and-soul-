@@ -62,20 +62,31 @@ export class AdminUsersService {
   async listUsers(
     page = 1,
     limit = 20,
-    opts: { search?: string; sort?: string; order?: string } = {},
+    opts: {
+      search?: string;
+      sort?: string;
+      order?: string;
+      status?: string;
+    } = {},
   ) {
     const { skip, take } = getPaginationParams(page, limit);
 
-    const where = opts.search
-      ? {
-          OR: [
-            { email: { contains: opts.search, mode: 'insensitive' as const } },
-            {
-              fullName: { contains: opts.search, mode: 'insensitive' as const },
-            },
-          ],
-        }
-      : {};
+    const where: Prisma.UserWhereInput = {};
+
+    if (opts.search) {
+      where.OR = [
+        { email: { contains: opts.search, mode: 'insensitive' } },
+        { fullName: { contains: opts.search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Las cuentas dadas de baja se ocultan salvo que se pidan explícitamente:
+    // el listado por defecto es el de gente con la que aún se puede trabajar.
+    if (opts.status && opts.status !== 'all') {
+      where.status = opts.status;
+    } else if (!opts.status) {
+      where.status = { not: 'deleted' };
+    }
 
     const orderBy = resolveOrderBy(
       USER_ORDER_BY_FIELDS,
@@ -96,6 +107,10 @@ export class AdminUsersService {
           fullName: true,
           role: true,
           isActive: true,
+          status: true,
+          statusReason: true,
+          statusChangedAt: true,
+          deletedAt: true,
           generationCredits: true,
           createdAt: true,
           lastLoginAt: true,
@@ -142,6 +157,12 @@ export class AdminUsersService {
         fullName: true,
         role: true,
         isActive: true,
+        status: true,
+        statusReason: true,
+        statusChangedAt: true,
+        statusChangedBy: true,
+        deletedAt: true,
+        anonymizedAt: true,
         emailVerified: true,
         generationCredits: true,
         createdAt: true,

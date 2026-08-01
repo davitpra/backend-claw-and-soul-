@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditsService } from '../credits/credits.service';
+import { AccountStatusService } from '../users/account-status.service';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
@@ -33,7 +34,33 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private creditsService: CreditsService,
+    private accountStatus: AccountStatusService,
   ) {}
+
+  /**
+   * Traduce el estado de la cuenta a lo que puede hacer un login.
+   *
+   * `inactive` (baja automática por inactividad) se reactiva sola: volver a
+   * entrar ya es prueba de que la cuenta sigue en uso, y sin proveedor de email
+   * no hay forma de pedir una confirmación aparte. `banned` y `deleted` nunca se
+   * reactivan solos.
+   *
+   * Devuelve la fila vigente: al reactivar, la que acaba de escribirse.
+   */
+  private async assertCanLogIn(user: User): Promise<User> {
+    switch (user.status) {
+      case 'active':
+        return user;
+      case 'inactive':
+        return this.accountStatus.reactivateOnLogin(user.id);
+      case 'banned':
+        throw new UnauthorizedException('Account suspended');
+      default:
+        // `deleted`: se responde igual que con credenciales incorrectas para no
+        // revelar que la cuenta existió.
+        throw new UnauthorizedException('Invalid credentials');
+    }
+  }
 
   async register(registerDto: RegisterDto, deviceInfo?: DeviceInfo) {
     // Check if user exists
@@ -92,7 +119,7 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto, deviceInfo?: DeviceInfo) {
-    const user = await this.prisma.user.findUnique({
+    let user = await this.prisma.user.findUnique({
       where: { email: loginDto.email },
     });
 
@@ -114,9 +141,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    if (!user.isActive) {
-      throw new UnauthorizedException('Account is disabled');
-    }
+    user = await this.assertCanLogIn(user);
 
     // Update last login
     await this.prisma.user.update({
@@ -191,6 +216,10 @@ export class AuthService {
     let user = await this.prisma.user.findUnique({ where: { email } });
 
     if (user) {
+      // El estado se comprueba ANTES de tocar nada: una cuenta suspendida o dada
+      // de baja no debe pasar siquiera por el backfill de perfil.
+      user = await this.assertCanLogIn(user);
+
       // Link the Google identity to the existing account and backfill profile
       // fields that are still empty.
       const data: { googleId?: string; fullName?: string; avatarUrl?: string } =
@@ -228,10 +257,6 @@ export class AuthService {
         return created;
       });
       this.logger.log(`New user registered via Google: ${user.email}`);
-    }
-
-    if (!user.isActive) {
-      throw new UnauthorizedException('Account is disabled');
     }
 
     await this.prisma.user.update({
@@ -294,6 +319,20 @@ export class AuthService {
 
       if (new Date() > storedToken.expiresAt) {
         throw new UnauthorizedException('Refresh token expired');
+      }
+
+      // El estado de la cuenta vive en la base, no en el JWT: sin esta lectura,
+      // una cuenta suspendida seguiría renovando su sesión durante los 7 días de
+      // vida del refresh token. Aquí sí se relee (una vez cada 15 min), a
+      // diferencia de JwtStrategy, que no puede permitirse una query por request.
+      const owner = await this.prisma.user.findUnique({
+        where: { id: storedToken.userId },
+        select: { status: true },
+      });
+
+      if (!owner || owner.status !== 'active') {
+        await this.revokeAllUserTokens(storedToken.userId);
+        throw new UnauthorizedException('Account is not active');
       }
 
       // TOKEN ROTATION (atomic): revoke the old token with an isRevoked:false

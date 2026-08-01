@@ -99,6 +99,49 @@ export class UsersService {
     return this.sanitizeUser(user);
   }
 
+  /**
+   * Comprueba que quien pide la baja es realmente el titular.
+   *
+   * Se exige escribir el email siempre, y la contraseña además cuando la cuenta
+   * tiene una: las creadas con Google no la tienen, y pedirla las dejaría sin
+   * forma de darse de baja.
+   */
+  async assertCanDeleteAccount(
+    userId: string,
+    input: { confirmEmail: string; password?: string },
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, passwordHash: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (
+      user.email.trim().toLowerCase() !==
+      input.confirmEmail.trim().toLowerCase()
+    ) {
+      throw new UnauthorizedException('The email does not match this account');
+    }
+
+    if (user.passwordHash) {
+      if (!input.password) {
+        throw new UnauthorizedException('Password is required');
+      }
+
+      const isPasswordValid = await bcrypt.compare(
+        input.password,
+        user.passwordHash,
+      );
+
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Password is incorrect');
+      }
+    }
+  }
+
   async updateLastLogin(userId: string) {
     return this.prisma.user.update({
       where: { id: userId },
@@ -106,9 +149,15 @@ export class UsersService {
     });
   }
 
-  private sanitizeUser(user: User): Omit<User, 'passwordHash'> {
+  /**
+   * Quita el hash de la contraseña y deja en su lugar `hasPassword`: el
+   * storefront necesita saber si la cuenta tiene contraseña (las de Google no)
+   * para decidir si pedirla al confirmar acciones sensibles.
+   */
+  private sanitizeUser(
+    user: User,
+  ): Omit<User, 'passwordHash'> & { hasPassword: boolean } {
     const { passwordHash, ...result } = user;
-    void passwordHash;
-    return result;
+    return { ...result, hasPassword: Boolean(passwordHash) };
   }
 }

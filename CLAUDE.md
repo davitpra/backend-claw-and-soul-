@@ -144,7 +144,7 @@ Image generations consume **generation credits** (1 per generation). See the
 `credits` module (`src/credits/`):
 
 - Each user starts with **5 free credits** (signup bonus, granted via the ledger).
-- A **paid Shopify order grants +5 credits per unit** purchased on regular lines
+- A **paid Shopify order grants +3 credits per unit** purchased on regular lines
   (reason `order_bonus`), and **credit-pack lines grant their mapped amount**
   (reason `pack_purchase`) — see the shared `grantOrderCredits` helper in
   `OrdersService`. Both are idempotent per order. **Digital/PBN lines are

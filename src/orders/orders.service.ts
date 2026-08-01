@@ -37,7 +37,7 @@ export class OrdersService {
   ) {}
 
   // Créditos de generación otorgados por cada unidad comprada en una orden pagada.
-  private static readonly CREDITS_PER_UNIT = 5;
+  private static readonly CREDITS_PER_UNIT = 3;
 
   // Los productos Digital (descarga gratuita; "PBN" es el alias legacy) no
   // otorgan ni revierten el order_bonus: son gratis, y otorgarlo permitiría
@@ -276,7 +276,7 @@ export class OrdersService {
   /**
    * Otorga los créditos de una orden pagada, separando líneas de "credit pack"
    * (creditAmount * qty, reason 'pack_purchase') de las líneas regulares
-   * (+5/unidad, reason 'order_bonus'). Las líneas Digital/PBN (producto
+   * (+3/unidad, reason 'order_bonus'). Las líneas Digital/PBN (producto
    * gratuito) se excluyen de ambos grants. Se computa desde los OrderItems ya
    * persistidos, así que ingestShopifyOrder y linkUserToOrder usan idéntica
    * lógica. Ambos grants son idempotentes por (reason, order.id) — webhooks
@@ -361,7 +361,7 @@ export class OrdersService {
   /**
    * Revierte los créditos de las líneas reembolsadas/canceladas — espejo exacto
    * de `grantOrderCredits`: líneas de credit pack revierten `creditAmount * qty`
-   * (reason `pack_purchase_reversal`) y líneas regulares `5/unidad` (reason
+   * (reason `pack_purchase_reversal`) y líneas regulares `3/unidad` (reason
    * `order_bonus_reversal`). Las líneas Digital/PBN se saltan, igual que en el
    * grant: nunca recibieron bono, no hay nada que revertir. Idempotente por
    * línea (reason, OrderItem.id): un webhook/cancelación repetidos son no-op.
@@ -433,7 +433,7 @@ export class OrdersService {
           : undefined;
       if (perUnit != null) {
         // Línea de credit pack. Si el mapping se borró tras el grant, la línea
-        // caería en la rama regular (5/unidad) — rareza aceptada.
+        // caería en la rama regular (3/unidad) — rareza aceptada.
         if (!packGrant) continue;
         await this.creditsService
           .revoke(

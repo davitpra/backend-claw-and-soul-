@@ -105,7 +105,7 @@ describe('OrdersService', () => {
       expect(mockCredits.revoke).not.toHaveBeenCalled();
     });
 
-    it('separa líneas regulares (5/unidad) de packs (creditAmount*qty)', async () => {
+    it('separa líneas regulares (3/unidad) de packs (creditAmount*qty)', async () => {
       stubGrants({ bonusUserId: 'user-bonus', packUserId: 'user-pack' });
       mockPrisma.orderItem.findMany.mockResolvedValue([
         { id: 'reg-1', shopifyVariantId: 'v-reg', quantity: 3 },
@@ -118,10 +118,10 @@ describe('OrdersService', () => {
       await reverse('order-1', ['reg-1', 'pack-1']);
 
       expect(mockCredits.revoke).toHaveBeenCalledTimes(2);
-      // Regular: 3 * 5 = 15, userId del grant order_bonus.
+      // Regular: 3 * 3 = 9, userId del grant order_bonus.
       expect(mockCredits.revoke).toHaveBeenCalledWith(
         'user-bonus',
-        15,
+        9,
         'order_bonus_reversal',
         'reg-1',
         expect.any(String),
@@ -197,7 +197,7 @@ describe('OrdersService', () => {
       expect(mockCredits.revoke).toHaveBeenCalledTimes(1);
       expect(mockCredits.revoke).toHaveBeenCalledWith(
         'user-bonus',
-        5,
+        3,
         'order_bonus_reversal',
         'reg-1',
         expect.any(String),
@@ -219,7 +219,7 @@ describe('OrdersService', () => {
       expect(mockCredits.revoke).toHaveBeenCalledTimes(1);
       expect(mockCredits.revoke).toHaveBeenCalledWith(
         'user-bonus',
-        5,
+        3,
         'order_bonus_reversal',
         'reg-1',
         expect.any(String),
@@ -240,7 +240,7 @@ describe('OrdersService', () => {
     ).grantOrderCredits(order);
 
   describe('grantOrderCredits', () => {
-    it('excluye líneas Digital/PBN del order_bonus (+5/unidad)', async () => {
+    it('excluye líneas Digital/PBN del order_bonus (+3/unidad)', async () => {
       mockPrisma.orderItem.findMany.mockResolvedValue([
         {
           shopifyVariantId: 'v-reg',
@@ -261,11 +261,11 @@ describe('OrdersService', () => {
 
       await grant({ id: 'order-1', userId: 'user-1', orderNumber: '#1042' });
 
-      // Solo la línea Canvas suma: 2 * 5 = 10.
+      // Solo la línea Canvas suma: 2 * 3 = 6.
       expect(mockCredits.grant).toHaveBeenCalledTimes(1);
       expect(mockCredits.grant).toHaveBeenCalledWith(
         'user-1',
-        10,
+        6,
         'order_bonus',
         'order-1',
         expect.any(String),
@@ -307,7 +307,7 @@ describe('OrdersService', () => {
 
       expect(mockCredits.revoke).toHaveBeenCalledWith(
         'user-bonus',
-        5,
+        3,
         'order_bonus_reversal',
         'item-1',
         expect.any(String),

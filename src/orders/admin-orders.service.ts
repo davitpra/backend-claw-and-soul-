@@ -393,6 +393,24 @@ export class AdminOrdersService {
               title: true,
               productionStatus: true,
               imageUrl: true,
+              // Para la miniatura de producto de la ficha de usuario: el id de
+              // variante cruza con la imagen live de Shopify y la imagen del
+              // estilo sirve de fallback de catálogo.
+              shopifyVariantId: true,
+              productRef: {
+                select: {
+                  shopifyHandle: true,
+                  style: {
+                    select: {
+                      images: {
+                        orderBy: [{ isPrimary: 'desc' }, { orderIndex: 'asc' }],
+                        take: 1,
+                        select: { imageUrl: true },
+                      },
+                    },
+                  },
+                },
+              },
               generation: { select: { resultUrl: true } },
             },
           },

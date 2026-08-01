@@ -1,10 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Expense, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FxRateService } from '../fx/fx-rate.service';
 import { ProviderRateService } from './provider-rate.service';
+import { createPaginatedResult } from '../common/utils/pagination.util';
 
 const BASE_CURRENCY = 'CAD';
+
+/** Los Decimal de Prisma no serializan a JSON: se exponen como number. */
+function toExpenseItem(row: Expense) {
+  return {
+    ...row,
+    amount: row.amount.toNumber(),
+    amountBase: row.amountBase?.toNumber() ?? null,
+    fxRate: row.fxRate?.toNumber() ?? null,
+  };
+}
 
 export interface RecordExpenseInput {
   category: string;
@@ -252,12 +263,7 @@ export class ExpensesService {
       orderBy: { createdAt: 'asc' },
     });
 
-    const items = rows.map((r) => ({
-      ...r,
-      amount: r.amount.toNumber(),
-      amountBase: r.amountBase?.toNumber() ?? null,
-      fxRate: r.fxRate?.toNumber() ?? null,
-    }));
+    const items = rows.map(toExpenseItem);
 
     const byCategory: Record<string, { count: number; totalBase: number }> = {};
     let grandTotal = 0;
@@ -314,35 +320,48 @@ export class ExpensesService {
     };
   }
 
+  /**
+   * Totales por categoría de todos los gastos del cliente. Sin límite de filas:
+   * un total capado sería silenciosamente incorrecto. Se lee con `select` de tres
+   * columnas (barato aun sin `take`) en vez de `groupBy` porque `_sum.amountBase`
+   * ignoraría las filas sin conversión FX, que caen a `amount`.
+   */
   async customerSummary(userId: string) {
     const rows = await this.prisma.expense.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
+      select: { category: true, amount: true, amountBase: true },
     });
-
-    const items = rows.map((r) => ({
-      ...r,
-      amount: r.amount.toNumber(),
-      amountBase: r.amountBase?.toNumber() ?? null,
-      fxRate: r.fxRate?.toNumber() ?? null,
-    }));
 
     const byCategory: Record<string, number> = {};
     let grandTotal = 0;
 
-    for (const item of items) {
-      const base = item.amountBase ?? item.amount;
-      byCategory[item.category] = (byCategory[item.category] ?? 0) + base;
+    for (const row of rows) {
+      const base = row.amountBase?.toNumber() ?? row.amount.toNumber();
+      byCategory[row.category] = (byCategory[row.category] ?? 0) + base;
       grandTotal += base;
     }
 
     return {
-      items,
       byCategory,
       grandTotal,
+      count: rows.length,
       baseCurrency: BASE_CURRENCY,
     };
+  }
+
+  /** Movimientos individuales del cliente, del más reciente al más antiguo. */
+  async customerExpenses(userId: string, page = 1, limit = 20) {
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.expense.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.expense.count({ where: { userId } }),
+    ]);
+
+    return createPaginatedResult(rows.map(toExpenseItem), total, page, limit);
   }
 
   async backfillGenerationCosts(): Promise<{

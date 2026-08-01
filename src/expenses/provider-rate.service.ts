@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -36,6 +37,44 @@ export class ProviderRateService implements OnModuleInit {
       amount: rate.amount.toNumber(),
       currency: rate.currency,
     };
+  }
+
+  /**
+   * Alta manual de una tarifa. Hasta ahora una tarifa solo nacía de la semilla o
+   * del auto-registro a $0 al usarse el modelo por primera vez, así que el primer
+   * gasto de un modelo nuevo se contabilizaba en cero. Esto permite adelantarse.
+   */
+  async create(
+    data: {
+      provider: string;
+      model: string;
+      unit: string;
+      amount: number;
+      currency?: string;
+    },
+    adminId?: string,
+  ) {
+    const existing = await this.prisma.providerRate.findUnique({
+      where: { provider_model: { provider: data.provider, model: data.model } },
+    });
+    if (existing) {
+      throw new ConflictException(
+        `Ya existe una tarifa para ${data.provider}/${data.model}`,
+      );
+    }
+
+    const created = await this.prisma.providerRate.create({
+      data: {
+        provider: data.provider,
+        model: data.model,
+        unit: data.unit,
+        amount: data.amount,
+        currency: data.currency ?? 'USD',
+        isActive: true,
+        updatedBy: adminId ?? null,
+      },
+    });
+    return { ...created, amount: created.amount.toNumber() };
   }
 
   async upsert(

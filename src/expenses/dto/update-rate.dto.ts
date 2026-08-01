@@ -1,4 +1,5 @@
-import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { RATE_UNITS } from './create-rate.dto';
 
 export class UpdateRateDto {
   @IsOptional()
@@ -6,8 +7,10 @@ export class UpdateRateDto {
   @Min(0)
   amount?: number;
 
+  // Restringido: una unidad con typo haría que el cálculo por megapíxeles
+  // cayera silenciosamente a tarifa plana.
   @IsOptional()
-  @IsString()
+  @IsIn(RATE_UNITS)
   unit?: string;
 
   @IsOptional()

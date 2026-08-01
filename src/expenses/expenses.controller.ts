@@ -1,10 +1,12 @@
 import {
   Controller,
+  DefaultValuePipe,
   Get,
   Post,
   Patch,
   Delete,
   Param,
+  ParseIntPipe,
   Body,
   Query,
   UseGuards,
@@ -12,12 +14,13 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ExpensesService } from './expenses.service';
 import { ProviderRateService } from './provider-rate.service';
+import { CreateRateDto } from './dto/create-rate.dto';
 import { ManualExpenseDto } from './dto/manual-expense.dto';
 import { UpdateRateDto } from './dto/update-rate.dto';
 
@@ -73,6 +76,17 @@ export class ExpensesController {
     return this.expensesService.customerSummary(userId);
   }
 
+  @Get('admin/users/:userId/expenses/items')
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  getUserExpenseItems(
+    @Param('userId') userId: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ) {
+    return this.expensesService.customerExpenses(userId, page, limit);
+  }
+
   @Post('admin/expenses/backfill-generations')
   backfillGenerations() {
     return this.expensesService.backfillGenerationCosts();
@@ -81,6 +95,12 @@ export class ExpensesController {
   @Get('admin/expense-rates')
   getRates() {
     return this.providerRateService.list();
+  }
+
+  @Post('admin/expense-rates')
+  @HttpCode(HttpStatus.CREATED)
+  createRate(@Body() dto: CreateRateDto, @CurrentUser() user: { id: string }) {
+    return this.providerRateService.create(dto, user.id);
   }
 
   @Patch('admin/expense-rates/:id')

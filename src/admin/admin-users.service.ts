@@ -115,6 +115,24 @@ export class AdminUsersService {
     return createPaginatedResult(users, total, page, limit);
   }
 
+  /**
+   * Consumo neto de créditos en generaciones: los `generation_spend` (negativos)
+   * netean con los `generation_refund` de las generaciones fallidas. Se deja
+   * fuera el resto del ledger (bonos, packs y sus reversas) porque son saldo
+   * concedido o retirado, no gasto del usuario.
+   */
+  private async getCreditsSpent(userId: string): Promise<number> {
+    const { _sum } = await this.prisma.creditTransaction.aggregate({
+      where: {
+        userId,
+        reason: { in: ['generation_spend', 'generation_refund'] },
+      },
+      _sum: { amount: true },
+    });
+
+    return -(_sum.amount ?? 0);
+  }
+
   async getUserDetail(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -151,7 +169,8 @@ export class AdminUsersService {
     });
 
     if (!user) throw new NotFoundException('User not found');
-    return user;
+
+    return { ...user, creditsSpent: await this.getCreditsSpent(id) };
   }
 
   async getUserGenerations(userId: string, page = 1, limit = 24) {

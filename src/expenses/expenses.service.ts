@@ -5,7 +5,7 @@ import { FxRateService } from '../fx/fx-rate.service';
 import { ProviderRateService } from './provider-rate.service';
 import { createPaginatedResult } from '../common/utils/pagination.util';
 
-const BASE_CURRENCY = 'CAD';
+export const BASE_CURRENCY = 'CAD';
 
 /** Los Decimal de Prisma no serializan a JSON: se exponen como number. */
 function toExpenseItem(row: Expense) {

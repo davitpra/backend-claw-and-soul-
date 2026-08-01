@@ -266,6 +266,56 @@ export class AdminUsersService {
       this.prisma.creditTransaction.count({ where: { userId } }),
     ]);
 
-    return createPaginatedResult(transactions, total, page, limit);
+    const costByGeneration = await this.generationCosts(transactions);
+
+    const rows = transactions.map((t) => ({
+      ...t,
+      costBase: t.referenceId
+        ? (costByGeneration.get(t.referenceId) ?? null)
+        : null,
+    }));
+
+    return createPaginatedResult(rows, total, page, limit);
+  }
+
+  /**
+   * Costo real (en moneda base) de las generaciones referenciadas por los
+   * movimientos de gasto/reembolso de la página. Una sola consulta extra.
+   *
+   * Sólo `generation_spend`/`generation_refund` llevan un `generationId` en
+   * `referenceId`; el resto de motivos son saldo concedido o retirado, no
+   * gasto, y se quedan sin costo. Un `generation_refund` normalmente tampoco
+   * tendrá costo: `recordGenerationCost` sólo corre al completar, así que una
+   * generación fallida nunca deja `Expense`.
+   */
+  private async generationCosts(
+    transactions: { reason: string; referenceId: string | null }[],
+  ): Promise<Map<string, number>> {
+    const generationIds = transactions
+      .filter(
+        (t) =>
+          t.reason === 'generation_spend' || t.reason === 'generation_refund',
+      )
+      .map((t) => t.referenceId)
+      .filter((id): id is string => Boolean(id));
+
+    if (generationIds.length === 0) return new Map();
+
+    const expenses = await this.prisma.expense.findMany({
+      where: {
+        category: 'image_generation',
+        generationId: { in: generationIds },
+      },
+      select: { generationId: true, amount: true, amountBase: true },
+    });
+
+    const map = new Map<string, number>();
+    for (const e of expenses) {
+      if (!e.generationId) continue;
+      // `amountBase` es null si faltó la conversión FX: se cae a `amount`.
+      const base = e.amountBase?.toNumber() ?? e.amount.toNumber();
+      map.set(e.generationId, (map.get(e.generationId) ?? 0) + base);
+    }
+    return map;
   }
 }

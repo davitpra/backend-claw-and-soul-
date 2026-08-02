@@ -43,6 +43,17 @@ const ORDER_BY_FIELDS: Record<string, (dir: SortDirection) => OrderOrderBy> = {
 
 const DEFAULT_ORDER_BY: OrderOrderBy = { shopifyCreatedAt: 'desc' };
 
+/**
+ * El mapeo variante→créditos solo sirve para calcular el `creditAmount` de la
+ * línea; se quita del `productRef` antes de exponerlo en la respuesta.
+ */
+function stripCreditPackVariants<T extends { creditPackVariants: unknown }>(
+  ref: T,
+): Omit<T, 'creditPackVariants'> {
+  const { creditPackVariants: _omitted, ...rest } = ref;
+  return rest;
+}
+
 @Injectable()
 export class AdminOrdersService {
   private readonly logger = new Logger(AdminOrdersService.name);
@@ -226,6 +237,15 @@ export class AdminOrdersService {
                 displayName: true,
                 fulfillmentMethod: true,
                 shopifyHandle: true,
+                // Ejes de producto: el admin los usa para distinguir arte de
+                // accesorios y packs de créditos (OrderItem no tiene el tipo).
+                template: true,
+                artKind: true,
+                isAccessory: true,
+                isCreditPack: true,
+                creditPackVariants: {
+                  select: { shopifyVariantId: true, creditAmount: true },
+                },
                 style: {
                   select: {
                     images: {
@@ -290,11 +310,24 @@ export class AdminOrdersService {
       taxAmount: order.taxAmount?.toNumber() ?? null,
       totalAmount: order.totalAmount.toNumber(),
       productionCost: order.productionCost?.toNumber() ?? null,
-      items: order.items.map((item) => ({
-        ...item,
-        unitPrice: item.unitPrice.toNumber(),
-        totalPrice: item.totalPrice.toNumber(),
-      })),
+      items: order.items.map((item) => {
+        // Créditos por unidad de la línea: se cruza la variante comprada contra
+        // el mapeo del pack (misma regla que `grantOrderCredits`). Las variantes
+        // del pack son detalle interno, así que no viajan en la respuesta.
+        const creditAmount =
+          item.productRef?.creditPackVariants.find(
+            (v) => v.shopifyVariantId === item.shopifyVariantId,
+          )?.creditAmount ?? null;
+        return {
+          ...item,
+          productRef: item.productRef
+            ? stripCreditPackVariants(item.productRef)
+            : null,
+          creditAmount,
+          unitPrice: item.unitPrice.toNumber(),
+          totalPrice: item.totalPrice.toNumber(),
+        };
+      }),
     };
   }
 

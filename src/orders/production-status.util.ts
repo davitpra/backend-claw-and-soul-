@@ -1,3 +1,5 @@
+import { OrderItemKind } from './order-item-kind.util';
+
 /**
  * Vocabulario y reglas del `productionStatus` de un OrderItem.
  *
@@ -55,9 +57,10 @@ export const PRODUCTION_QUEUE_STATUSES: string[] = [
 ];
 
 /**
- * Transiciones manuales válidas (admin). Los estados tempranos se omiten del
- * avance porque los gobierna la auto-asignación; solo se permite cancelar o
- * reembolsar desde ellos.
+ * Transiciones manuales válidas (admin) del flujo de arte, y default del resto de
+ * tipos. Los estados tempranos se omiten del avance porque los gobierna la
+ * auto-asignación; solo se permite cancelar o reembolsar desde ellos.
+ * Los accesorios usan `ACCESSORY_VALID_TRANSITIONS` — resuelve `transitionsFor`.
  */
 export const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['cancelled', 'refunded'],
@@ -74,6 +77,41 @@ export const VALID_TRANSITIONS: Record<string, string[]> = {
   refunded: [],
   restocked: [],
 };
+
+/**
+ * Transiciones de un item de accesorio (kit, pinceles). No se genera ni se
+ * imprime nada: del pago pasa a preparar el envío y de ahí a enviado, saltando
+ * `pre_production`/`in_production`/`printed`.
+ *
+ * Esos tres estados sí aparecen como origen porque un accesorio pudo avanzar a
+ * ellos con la máquina anterior (compartida con el arte); son escape hatches
+ * heredados hacia `shipped`, no parte del flujo nuevo.
+ */
+export const ACCESSORY_VALID_TRANSITIONS: Record<string, string[]> = {
+  pending: ['cancelled', 'refunded'],
+  generating: ['cancelled', 'refunded'],
+  art_failed: ['cancelled', 'refunded'],
+  draft: ['shipped', 'on_hold', 'cancelled', 'refunded'],
+  pre_production: ['shipped', 'on_hold', 'cancelled', 'refunded'],
+  in_production: ['shipped', 'on_hold', 'cancelled', 'refunded'],
+  printed: ['shipped', 'on_hold', 'cancelled', 'refunded'],
+  shipped: ['delivered', 'refunded'],
+  delivered: ['refunded', 'restocked'],
+  on_hold: ['draft', 'cancelled', 'refunded'],
+  cancelled: [],
+  refunded: [],
+  restocked: [],
+};
+
+/**
+ * Transiciones manuales válidas para un item según su tipo. Arte y créditos usan
+ * la máquina completa; los accesorios, la reducida.
+ */
+export function transitionsFor(status: string, kind: OrderItemKind): string[] {
+  const map =
+    kind === 'accessory' ? ACCESSORY_VALID_TRANSITIONS : VALID_TRANSITIONS;
+  return map[status] ?? [];
+}
 
 /**
  * Estados que representan una compra deshecha (cancelada o devuelta) y que

@@ -16,13 +16,14 @@ import { ShopifyOrderPayload } from './dto/shopify-order.dto';
 import { Prisma } from '@prisma/client';
 import { CreditsService } from '../credits/credits.service';
 import {
-  VALID_TRANSITIONS,
   CANCELLABLE_STATUSES,
   CLAWBACK_STATUSES,
   TERMINAL_STATUSES as INACTIVE_STATUSES,
   computeAutoEarlyStatus,
   isEarlyAutoStatus,
+  transitionsFor,
 } from './production-status.util';
+import { orderItemKind } from './order-item-kind.util';
 
 @Injectable()
 export class OrdersService {
@@ -735,10 +736,19 @@ export class OrdersService {
   ): Promise<void> {
     const item = await this.prisma.orderItem.findFirst({
       where: { id: itemId, orderId },
+      include: {
+        productRef: {
+          select: { isCreditPack: true, isAccessory: true, template: true },
+        },
+      },
     });
     if (!item) throw new NotFoundException('Order item not found');
 
-    const allowed = VALID_TRANSITIONS[item.productionStatus] ?? [];
+    // Los accesorios tienen su propia máquina (sin producción ni impresión).
+    const allowed = transitionsFor(
+      item.productionStatus,
+      orderItemKind(item.productRef),
+    );
     if (!allowed.includes(toStatus)) {
       throw new BadRequestException(
         `Cannot transition from "${item.productionStatus}" to "${toStatus}"`,

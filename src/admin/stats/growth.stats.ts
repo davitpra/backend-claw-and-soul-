@@ -6,6 +6,19 @@ import { ResolvedPeriod, deltaPct, safeRatio } from './period.util';
 const ABANDONED_AFTER_DAYS = 3;
 
 /**
+ * El equipo no es clientela: sus cuentas no cuentan como usuarios en ninguna
+ * métrica del dashboard, o con poco tráfico las propias pruebas internas mueven
+ * las cifras más que los clientes.
+ *
+ * `TimelineStats` repite este filtro en SQL a propósito: si uno de los dos deja
+ * de aplicarlo, la suma de la serie diaria deja de cuadrar con `newUsers`.
+ */
+const CUSTOMER_ONLY = { role: { not: 'admin' } } as const;
+
+/** Cuentas dadas de baja: fuera de los conteos, igual que en /admin/users. */
+const NOT_DELETED = { status: { not: 'deleted' } } as const;
+
+/**
  * Bloque de crecimiento: base de usuarios, altas, actividad y el embudo
  * mascota → generación → PBN guardado → pedido pagado.
  *
@@ -36,17 +49,22 @@ export class GrowthStats {
       // Acumulado, no ventana. Excluye las cuentas dadas de baja igual que hace
       // `listUsers` por defecto, para que cuadre con el «N en total» que muestra
       // /admin/users en vez de contradecirlo.
-      this.prisma.user.count({ where: { status: { not: 'deleted' } } }),
+      this.prisma.user.count({ where: { ...CUSTOMER_ONLY, ...NOT_DELETED } }),
 
       this.prisma.user.count({
-        where: { createdAt: { gte: period.from, lt: period.to } },
+        where: {
+          ...CUSTOMER_ONLY,
+          createdAt: { gte: period.from, lt: period.to },
+        },
       }),
       this.prisma.user.count({
-        where: { createdAt: { gte: period.prevFrom, lt: period.prevTo } },
+        where: {
+          ...CUSTOMER_ONLY,
+          createdAt: { gte: period.prevFrom, lt: period.prevTo },
+        },
       }),
-      // Solo clientes reales: con poco tráfico los logins del propio equipo
-      // inflan el número hasta hacerlo ilegible, y una cuenta dada de baja no es
-      // «activa» aunque su último login caiga dentro de la ventana.
+      // Una cuenta dada de baja no es «activa» aunque su último login caiga
+      // dentro de la ventana.
       //
       // `lastLoginAt` se pisa en cada login, no es un historial: en periodos
       // pasados esto infra-cuenta (quien entró en la ventana y volvió después ya
@@ -54,8 +72,8 @@ export class GrowthStats {
       // pediría la tabla de sesiones.
       this.prisma.user.count({
         where: {
-          role: { not: 'admin' },
-          status: { not: 'deleted' },
+          ...CUSTOMER_ONLY,
+          ...NOT_DELETED,
           lastLoginAt: { gte: period.from, lt: period.to },
         },
       }),
@@ -83,10 +101,14 @@ export class GrowthStats {
         },
       }),
 
+      // Global, no acotado al periodo: es un «ahora mismo», el umbral de días es
+      // fijo y no depende de la ventana elegida. El carrito de una cuenta del
+      // equipo o dada de baja no es una venta que se pueda recuperar.
       this.prisma.cart.count({
         where: {
           updatedAt: { lt: abandonedBefore },
           items: { some: {} },
+          user: { ...CUSTOMER_ONLY, ...NOT_DELETED },
         },
       }),
     ]);

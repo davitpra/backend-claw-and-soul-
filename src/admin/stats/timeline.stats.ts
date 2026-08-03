@@ -93,9 +93,13 @@ export class TimelineStats {
         ORDER BY day ASC
       `,
 
-      // Sin filtrar por `status`: `GrowthStats.newUsers` tampoco lo hace, y la
-      // suma de esta serie tiene que cuadrar con ese KPI. El filtro de borradas
-      // aplica solo a `totalUsers`, que es un acumulado.
+      // El filtro de admins replica el `CUSTOMER_ONLY` de `GrowthStats`: la suma
+      // de esta serie tiene que cuadrar con el KPI `newUsers`, así que los dos
+      // sitios excluyen exactamente lo mismo.
+      //
+      // Sin filtrar por `status`: `GrowthStats.newUsers` tampoco lo hace, por el
+      // mismo motivo. El filtro de borradas aplica solo a `totalUsers`, que es
+      // un acumulado.
       this.prisma.$queryRaw<DayRow[]>`
         SELECT
           DATE_TRUNC('day', created_at)::date AS day,
@@ -103,6 +107,7 @@ export class TimelineStats {
         FROM users
         WHERE created_at >= ${period.from}
           AND created_at < ${period.to}
+          AND role <> 'admin'
         GROUP BY day
         ORDER BY day ASC
       `,

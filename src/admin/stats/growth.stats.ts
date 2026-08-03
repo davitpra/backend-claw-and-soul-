@@ -44,8 +44,20 @@ export class GrowthStats {
       this.prisma.user.count({
         where: { createdAt: { gte: period.prevFrom, lt: period.prevTo } },
       }),
+      // Solo clientes reales: con poco tráfico los logins del propio equipo
+      // inflan el número hasta hacerlo ilegible, y una cuenta dada de baja no es
+      // «activa» aunque su último login caiga dentro de la ventana.
+      //
+      // `lastLoginAt` se pisa en cada login, no es un historial: en periodos
+      // pasados esto infra-cuenta (quien entró en la ventana y volvió después ya
+      // no aparece). Exacto para el periodo en curso; medir ventanas históricas
+      // pediría la tabla de sesiones.
       this.prisma.user.count({
-        where: { lastLoginAt: { gte: period.from, lt: period.to } },
+        where: {
+          role: { not: 'admin' },
+          status: { not: 'deleted' },
+          lastLoginAt: { gte: period.from, lt: period.to },
+        },
       }),
 
       this.prisma.pet.count({

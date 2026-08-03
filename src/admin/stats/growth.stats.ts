@@ -78,8 +78,15 @@ export class GrowthStats {
         },
       }),
 
+      // Mismo criterio de clientela que el resto del bloque: los otros escalones
+      // ya se lo aplican por otra vía (`isAdminTest` en generaciones, `origin`
+      // en PBN), y sin esto el primer escalón contaría las mascotas de prueba
+      // del equipo y las de cuentas dadas de baja, hundiendo el embudo entero.
       this.prisma.pet.count({
-        where: { createdAt: { gte: period.from, lt: period.to } },
+        where: {
+          createdAt: { gte: period.from, lt: period.to },
+          user: { ...CUSTOMER_ONLY, ...NOT_DELETED },
+        },
       }),
       this.prisma.generation.count({
         where: {

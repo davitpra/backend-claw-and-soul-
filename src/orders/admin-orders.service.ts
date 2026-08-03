@@ -479,6 +479,41 @@ export class AdminOrdersService {
    * Cada pedido guarda su propia moneda, así que un `_sum` plano mezclaría
    * divisas: se agrupa por moneda y se convierte cubo a cubo.
    */
+  /**
+   * Dirección de envío del usuario: la del pedido más reciente que traiga una.
+   * Es el único dato de ubicación fiable que hay — declarado por la propia
+   * persona — y solo existe si ha comprado alguna vez.
+   *
+   * Entran también los pedidos de invitado con su email, así que una cuenta con
+   * `userId` sin enlazar sigue teniendo dirección.
+   */
+  async getUserShippingAddress(userId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        ...(await this.userOrdersWhere(userId)),
+        shippingAddress: { not: Prisma.AnyNull },
+      },
+      orderBy: { shopifyCreatedAt: 'desc' },
+      select: {
+        shippingAddress: true,
+        customerPhone: true,
+        orderNumber: true,
+        shopifyCreatedAt: true,
+      },
+    });
+
+    if (!order) return null;
+
+    return {
+      address: order.shippingAddress,
+      phone: order.customerPhone,
+      // De qué pedido salió: la dirección envejece, y sin la fecha no se sabe
+      // si sigue siendo la buena.
+      sourceOrderNumber: order.orderNumber,
+      sourceOrderDate: order.shopifyCreatedAt,
+    };
+  }
+
   async getUserRevenue(userId: string) {
     const where: Prisma.OrderWhereInput = {
       ...(await this.userOrdersWhere(userId)),

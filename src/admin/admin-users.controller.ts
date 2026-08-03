@@ -1,16 +1,21 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
   ParseIntPipe,
   DefaultValuePipe,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -122,6 +127,17 @@ export class AdminUsersController {
     return this.usersService.getUserRevenue(id);
   }
 
+  @Get(':id/shipping-address')
+  @ApiOperation({
+    summary: "Get the user's latest known shipping address",
+    description:
+      'Sale del pedido más reciente con dirección, incluidos los de invitado con su email. `null` si nunca ha comprado.',
+  })
+  @ApiResponse({ status: 200, description: 'Shipping address retrieved' })
+  shippingAddress(@Param('id') id: string) {
+    return this.usersService.getUserShippingAddress(id);
+  }
+
   @Get(':id/paint-by-numbers')
   @ApiOperation({
     summary: 'Get saved Paint-by-Numbers for a user (paginated)',
@@ -164,6 +180,91 @@ export class AdminUsersController {
       sort,
       order,
     });
+  }
+
+  @Get(':id/sessions')
+  @ApiOperation({
+    summary: 'Get active sessions for a user',
+    description:
+      'Solo sesiones vivas (no revocadas y sin expirar). `isCurrent` únicamente se marca cuando un admin consulta su propia ficha.',
+  })
+  @ApiResponse({ status: 200, description: 'User sessions retrieved' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  sessions(@Param('id') id: string, @Req() req: Request) {
+    const currentToken = req.cookies?.refreshToken as string | undefined;
+    return this.usersService.getUserSessions(id, currentToken);
+  }
+
+  @Delete(':id/sessions/:tokenId')
+  @ApiOperation({
+    summary: 'Revoke a single session of a user',
+    description:
+      'La ventana residual del access token ya emitido es de 15 minutos.',
+  })
+  @ApiResponse({ status: 200, description: 'Session revoked' })
+  @ApiResponse({ status: 404, description: 'User or live session not found' })
+  revokeSession(
+    @Param('id') id: string,
+    @Param('tokenId') tokenId: string,
+    @CurrentUser() admin: JwtPayload,
+  ) {
+    return this.usersService.revokeUserSession(id, tokenId, admin.sub);
+  }
+
+  @Post(':id/sessions/revoke-all')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke every live session of a user' })
+  @ApiResponse({ status: 200, description: 'Sessions revoked' })
+  @ApiResponse({
+    status: 400,
+    description: 'An admin cannot close their own sessions from here',
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  revokeAllSessions(@Param('id') id: string, @CurrentUser() admin: JwtPayload) {
+    // Cerrarse todas las sesiones desde el panel de usuarios es un autogol sin
+    // ganancia: para eso está la página de cuenta propia.
+    if (id === admin.sub) {
+      throw new BadRequestException(
+        'Use your own account page to close your sessions.',
+      );
+    }
+    return this.usersService.revokeAllUserSessions(id, admin.sub);
+  }
+
+  @Get(':id/audit-log')
+  @ApiOperation({
+    summary: 'Get the audit trail of a user (paginated)',
+    description:
+      '`scope=target` (por defecto) lista lo que le pasó a la cuenta; `actor`, lo que la cuenta hizo sobre otras; `all`, ambas.',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({
+    name: 'scope',
+    required: false,
+    enum: ['target', 'actor', 'all'],
+  })
+  @ApiResponse({ status: 200, description: 'User audit log retrieved' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  auditLog(
+    @Param('id') id: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('scope') scope?: string,
+  ) {
+    return this.usersService.getUserAuditLog(id, page, limit, { scope });
+  }
+
+  @Get(':id/cart')
+  @ApiOperation({
+    summary: "Get the user's open cart",
+    description:
+      'Devuelve `{ cart: null }` cuando no hay carrito o está vacío. Los importes no llevan moneda: `CartItem` no la guarda.',
+  })
+  @ApiResponse({ status: 200, description: 'User cart retrieved' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  cart(@Param('id') id: string) {
+    return this.usersService.getUserCart(id);
   }
 
   @Patch(':id/status')

@@ -510,6 +510,10 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt(sort: Desc)])
+  // El historial por usuario del admin filtra por el objetivo, no por el actor
+  // (`userId` es quien actúa). Sin este índice la consulta cae en seq scan, y la
+  // tabla crece rápido: el sync de productos escribe una fila por producto.
+  @@index([entityType, entityId, createdAt(sort: Desc)])
   @@map("audit_logs")
 }
 

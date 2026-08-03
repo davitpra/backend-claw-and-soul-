@@ -10,10 +10,11 @@ import { StorageService } from '../storage/storage.service';
  */
 const mockPrisma = {
   user: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
-  refreshToken: { updateMany: jest.fn() },
-  auditLog: { create: jest.fn() },
+  refreshToken: { updateMany: jest.fn(), deleteMany: jest.fn() },
+  auditLog: { create: jest.fn(), updateMany: jest.fn() },
   pet: { updateMany: jest.fn() },
   petPhoto: { findMany: jest.fn(), deleteMany: jest.fn() },
+  cart: { deleteMany: jest.fn() },
   $transaction: jest.fn(),
 };
 
@@ -59,6 +60,11 @@ describe('AccountStatusService', () => {
     );
     mockPrisma.user.update.mockResolvedValue(updatedRow);
     mockStorage.delete.mockResolvedValue(undefined);
+    // Los `deleteMany`/`updateMany` de la purga devuelven `{ count }`, que el
+    // servicio desestructura para el detalle del audit log.
+    mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 2 });
+    mockPrisma.auditLog.updateMany.mockResolvedValue({ count: 3 });
+    mockPrisma.cart.deleteMany.mockResolvedValue({ count: 1 });
   });
 
   describe('setStatus', () => {
@@ -248,6 +254,42 @@ describe('AccountStatusService', () => {
         'users/user-1/avatar/abc',
       );
       expect(mockStorage.delete).toHaveBeenCalledWith('pets/photo-1');
+    });
+
+    it('clears the residual PII of sessions, audit log and cart', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        ...activeUser,
+        status: 'deleted',
+        avatarStorageKey: null,
+      });
+      mockPrisma.petPhoto.findMany.mockResolvedValue([]);
+
+      await service.anonymize('user-1');
+
+      expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+      });
+      // El audit log no se borra: solo pierde la IP y el user-agent, para que
+      // el historial de la cuenta siga siendo auditable tras la purga.
+      expect(mockPrisma.auditLog.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { ipAddress: null, userAgent: null },
+        }),
+      );
+      expect(mockPrisma.cart.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+      });
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'user.anonymized',
+            details: expect.objectContaining({
+              sessionsDeleted: 2,
+              auditEntriesScrubbed: 3,
+            }),
+          }),
+        }),
+      );
     });
 
     it('is a no-op when the account was already anonymized', async () => {

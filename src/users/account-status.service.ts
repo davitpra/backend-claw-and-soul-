@@ -7,6 +7,7 @@ import {
 import type { Prisma, User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { AUDIT_ACTION } from '../common/constants/audit-actions';
 
 /** Estados posibles del ciclo de vida de una cuenta. */
 export const ACCOUNT_STATUSES = [
@@ -26,17 +27,6 @@ export const ADMIN_SETTABLE_STATUSES = [
 ] as const;
 
 export type AdminSettableStatus = (typeof ADMIN_SETTABLE_STATUSES)[number];
-
-/** Acciones que quedan registradas en `AuditLog.action`. */
-const AUDIT_ACTION = {
-  banned: 'user.banned',
-  reactivated: 'user.reactivated',
-  deactivated: 'user.deactivated',
-  deactivatedInactivity: 'user.deactivated_inactivity',
-  softDeleted: 'user.soft_deleted',
-  restored: 'user.restored',
-  anonymized: 'user.anonymized',
-} as const;
 
 export interface StatusChangeOptions {
   reason?: string;
@@ -284,11 +274,36 @@ export class AccountStatusService {
         data: { name: 'Mascota', description: null, isActive: false },
       });
 
+      // Las sesiones ya están revocadas desde la baja, pero las filas siguen
+      // guardando IP y user-agent. Se borran enteras: no queda nada que auditar
+      // de un token muerto.
+      const { count: sessionsDeleted } = await tx.refreshToken.deleteMany({
+        where: { userId },
+      });
+
+      // El audit log no se purga nunca, así que aquí se le quita el PII en vez
+      // de borrarlo: la acción y la fecha de cada evento siguen siendo
+      // auditables después de la purga.
+      const { count: auditEntriesScrubbed } = await tx.auditLog.updateMany({
+        where: {
+          OR: [{ userId }, { entityType: 'User', entityId: userId }],
+        },
+        data: { ipAddress: null, userAgent: null },
+      });
+
+      // El carrito no cae por cascada (la cuenta sigue existiendo) y sus líneas
+      // apuntan a imágenes de las mascotas ya borradas.
+      await tx.cart.deleteMany({ where: { userId } });
+
       await this.writeAuditLog(tx, {
         action: AUDIT_ACTION.anonymized,
         actorId: null,
         targetId: userId,
-        details: { photosDeleted: photos.length },
+        details: {
+          photosDeleted: photos.length,
+          sessionsDeleted,
+          auditEntriesScrubbed,
+        },
       });
     });
 

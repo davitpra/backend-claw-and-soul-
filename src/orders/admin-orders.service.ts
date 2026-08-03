@@ -6,9 +6,10 @@ import {
   createPaginatedResult,
 } from '../common/utils/pagination.util';
 import { resolveOrderBy, SortDirection } from '../common/utils/sorting.util';
-import { BASE_CURRENCY, ExpensesService } from '../expenses/expenses.service';
+import { ExpensesService } from '../expenses/expenses.service';
 import { FxRateService } from '../fx/fx-rate.service';
 import { PRODUCTION_QUEUE_STATUSES } from './production-status.util';
+import { sumRevenueByCurrency } from './revenue.util';
 
 type OrderOrderBy =
   | Prisma.OrderOrderByWithRelationInput
@@ -527,41 +528,6 @@ export class AdminOrdersService {
       _count: { _all: true },
     });
 
-    let total = 0;
-    let orderCount = 0;
-    const unconvertedCurrencies: string[] = [];
-
-    for (const group of groups) {
-      const amount = group._sum.totalAmount?.toNumber() ?? 0;
-      orderCount += group._count._all;
-
-      if (group.currency === BASE_CURRENCY) {
-        total += amount;
-        continue;
-      }
-
-      const converted = await this.fxRate.convert(
-        amount,
-        group.currency,
-        BASE_CURRENCY,
-      );
-
-      if (converted) {
-        total += converted.amount;
-      } else {
-        // Sin tipo de cambio se suma el importe crudo (igual que hace
-        // `ExpensesService.customerSummary`) y se declara la moneda: mejor un
-        // total con la salvedad a la vista que un hueco silencioso.
-        total += amount;
-        unconvertedCurrencies.push(group.currency);
-      }
-    }
-
-    return {
-      baseCurrency: BASE_CURRENCY,
-      total,
-      orderCount,
-      unconvertedCurrencies,
-    };
+    return sumRevenueByCurrency(groups, this.fxRate);
   }
 }

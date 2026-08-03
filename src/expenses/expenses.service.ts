@@ -286,7 +286,7 @@ export class ExpensesService {
     };
   }
 
-  async globalSummary(period: '7d' | '30d' | '90d' | 'all' = '30d') {
+  async globalSummary(period: '3d' | '7d' | '30d' | '90d' | 'all' = '30d') {
     let since: Date | undefined;
     if (period !== 'all') {
       const days = parseInt(period.replace('d', ''), 10);

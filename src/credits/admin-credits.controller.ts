@@ -22,7 +22,7 @@ import { GrantCreditsDto } from './dto/grant-credits.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 
-const PERIODS: EconomicsPeriod[] = ['7d', '30d', '90d', 'all'];
+const PERIODS: EconomicsPeriod[] = ['3d', '7d', '30d', '90d', 'all'];
 
 @ApiTags('admin-credits')
 @ApiBearerAuth()

@@ -1,141 +1,59 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { MoneyStats } from './stats/money.stats';
+import { ProductionStats } from './stats/production.stats';
+import { PipelineStats } from './stats/pipeline.stats';
+import { GrowthStats } from './stats/growth.stats';
+import { TimelineStats } from './stats/timeline.stats';
+import { ActivityStats } from './stats/activity.stats';
+import { StatsPeriod, resolvePeriod } from './stats/period.util';
 
+/**
+ * Orquestador del dashboard. No calcula nada: resuelve la ventana de tiempo y
+ * compone lo que devuelven los colaboradores de `stats/`, que corren en
+ * paralelo.
+ */
 @Injectable()
 export class AdminStatsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly money: MoneyStats,
+    private readonly production: ProductionStats,
+    private readonly pipeline: PipelineStats,
+    private readonly growth: GrowthStats,
+    private readonly timeline: TimelineStats,
+    private readonly activity: ActivityStats,
+  ) {}
 
-  async getOverview() {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  async getOverview(periodKey: StatsPeriod = '30d') {
+    const period = resolvePeriod(periodKey);
 
-    const [
-      totalUsers,
-      totalPets,
-      totalGenerations,
-      totalStyles,
-      totalFormats,
-      totalProducts,
-      usersByRole,
-      generationsByStatus,
-      generationsByType,
-      petsBySpecies,
-      topStyles,
-      recentSyncs,
-      timeline,
-      ordersThisWeek,
-      revenueThisWeek,
-      ordersByProductionStatus,
-    ] = await Promise.all([
-      this.prisma.user.count(),
-      this.prisma.pet.count({ where: { isActive: true } }),
-      this.prisma.generation.count(),
-      this.prisma.style.count({ where: { isActive: true } }),
-      this.prisma.format.count({ where: { isActive: true } }),
-      this.prisma.productReference.count({ where: { isActive: true } }),
+    const [money, production, pipeline, growth, timeline, activity] =
+      await Promise.all([
+        this.money.collect(period),
+        this.production.collect(period),
+        this.pipeline.collect(period),
+        this.growth.collect(period),
+        this.timeline.collect(period),
+        this.activity.collect(period),
+      ]);
 
-      this.prisma.user.groupBy({ by: ['role'], _count: { _all: true } }),
-      this.prisma.generation.groupBy({
-        by: ['status'],
-        _count: { _all: true },
-      }),
-      this.prisma.generation.groupBy({ by: ['type'], _count: { _all: true } }),
-      this.prisma.pet.groupBy({ by: ['species'], _count: { _all: true } }),
-
-      this.prisma.generation
-        .groupBy({
-          by: ['styleId'],
-          _count: { _all: true },
-          orderBy: { _count: { styleId: 'desc' } },
-          take: 8,
-        })
-        .then(async (rows) => {
-          if (rows.length === 0) return [];
-          const styleIds = rows.map((r) => r.styleId);
-          const styles = await this.prisma.style.findMany({
-            where: { id: { in: styleIds } },
-            select: { id: true, displayName: true },
-          });
-          const nameMap = new Map(styles.map((s) => [s.id, s.displayName]));
-          return rows.map((r) => ({
-            styleId: r.styleId,
-            displayName: nameMap.get(r.styleId) ?? r.styleId,
-            count: r._count._all,
-          }));
-        }),
-
-      this.prisma.syncLog.findMany({
-        orderBy: { startedAt: 'desc' },
-        take: 5,
-      }),
-
-      this.prisma.$queryRaw<{ day: Date; count: number }[]>`
-        SELECT
-          DATE_TRUNC('day', created_at)::date AS day,
-          COUNT(*)::int AS count
-        FROM generations
-        WHERE created_at >= ${thirtyDaysAgo}
-        GROUP BY day
-        ORDER BY day ASC
-      `,
-
-      this.prisma.order.count({
-        where: { shopifyCreatedAt: { gte: sevenDaysAgo } },
-      }),
-
-      this.prisma.order.aggregate({
-        _sum: { totalAmount: true },
-        where: {
-          shopifyCreatedAt: { gte: sevenDaysAgo },
-          financialStatus: 'paid',
-        },
-      }),
-
-      this.prisma.orderItem.groupBy({
-        by: ['productionStatus'],
-        _count: { _all: true },
-      }),
-    ]);
+    const { baseCurrency, ...moneyRest } = money;
 
     return {
-      totals: {
-        users: totalUsers,
-        pets: totalPets,
-        generations: totalGenerations,
-        styles: totalStyles,
-        formats: totalFormats,
-        products: totalProducts,
+      period: {
+        key: period.key,
+        days: period.days,
+        from: period.from,
+        to: period.to,
+        prevFrom: period.prevFrom,
+        prevTo: period.prevTo,
       },
-      usersByRole: Object.fromEntries(
-        usersByRole.map((r) => [r.role, r._count._all]),
-      ),
-      generationsByStatus: Object.fromEntries(
-        generationsByStatus.map((r) => [r.status, r._count._all]),
-      ),
-      generationsByType: Object.fromEntries(
-        generationsByType.map((r) => [r.type, r._count._all]),
-      ),
-      petsBySpecies: Object.fromEntries(
-        petsBySpecies.map((r) => [r.species, r._count._all]),
-      ),
-      topStyles,
-      recentSyncs,
-      timeline: timeline.map((r) => ({
-        day: r.day.toISOString().split('T')[0],
-        count: Number(r.count),
-      })),
-      orders: {
-        thisWeek: ordersThisWeek,
-        revenueThisWeek: revenueThisWeek._sum.totalAmount?.toNumber() ?? 0,
-        byProductionStatus: Object.fromEntries(
-          ordersByProductionStatus.map((r) => [
-            r.productionStatus,
-            r._count._all,
-          ]),
-        ),
-      },
+      baseCurrency,
+      money: moneyRest,
+      production,
+      pipeline,
+      growth,
+      timeline,
+      ...activity,
     };
   }
 }

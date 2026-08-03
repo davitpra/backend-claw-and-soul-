@@ -36,7 +36,7 @@ export class ExpensesController {
   ) {}
 
   @Get('admin/expenses/summary')
-  getSummary(@Query('period') period: '7d' | '30d' | '90d' | 'all') {
+  getSummary(@Query('period') period: '3d' | '7d' | '30d' | '90d' | 'all') {
     return this.expensesService.globalSummary(period ?? '30d');
   }
 

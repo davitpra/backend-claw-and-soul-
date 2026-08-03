@@ -7,6 +7,6 @@ import { AdminCreditsController } from './admin-credits.controller';
 @Module({
   controllers: [CreditsController, AdminCreditsController],
   providers: [CreditsService, CreditEconomicsService],
-  exports: [CreditsService],
+  exports: [CreditsService, CreditEconomicsService],
 })
 export class CreditsModule {}

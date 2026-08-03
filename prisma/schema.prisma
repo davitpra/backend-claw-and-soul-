@@ -12,38 +12,38 @@ datasource db {
 // ============================================
 
 model User {
-  id               String    @id @default(uuid())
-  email            String    @unique
-  passwordHash     String?   @map("password_hash")
-  googleId         String?   @unique @map("google_id")
-  fullName         String?   @map("full_name")
-  avatarUrl        String?   @map("avatar_url")
-  avatarStorageKey String?   @map("avatar_storage_key")
-  role             String    @default("user") // Enum: user, premium, admin
-  emailVerified    Boolean   @default(false) @map("email_verified")
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String?   @map("password_hash")
+  googleId          String?   @unique @map("google_id")
+  fullName          String?   @map("full_name")
+  avatarUrl         String?   @map("avatar_url")
+  avatarStorageKey  String?   @map("avatar_storage_key")
+  role              String    @default("user") // Enum: user, premium, admin
+  emailVerified     Boolean   @default(false) @map("email_verified")
   // Invariante: isActive === (status === 'active'). Se conserva como campo propio
   // porque el login y varias vistas ya lo leen; AccountStatusService es el único
   // que escribe ambos, siempre a la vez.
-  isActive         Boolean   @default(true) @map("is_active")
+  isActive          Boolean   @default(true) @map("is_active")
   // Ciclo de vida de la cuenta: active | banned | inactive | deleted
   //   banned   → suspensión manual del admin (reversible)
   //   inactive → baja automática por inactividad (se reactiva sola al loguear)
   //   deleted  → baja lógica; a los 30 días el cron de purga anonimiza el PII
-  status           String    @default("active")
-  statusReason     String?   @map("status_reason")
-  statusChangedAt  DateTime? @map("status_changed_at")
+  status            String    @default("active")
+  statusReason      String?   @map("status_reason")
+  statusChangedAt   DateTime? @map("status_changed_at")
   // User.id del admin que ejecutó el cambio; null si lo hizo el cron o el propio
   // usuario. Sin FK a propósito: una auto-relación aquí complicaría los borrados.
-  statusChangedBy  String?   @map("status_changed_by")
-  deletedAt        DateTime? @map("deleted_at")
-  anonymizedAt     DateTime? @map("anonymized_at")
+  statusChangedBy   String?   @map("status_changed_by")
+  deletedAt         DateTime? @map("deleted_at")
+  anonymizedAt      DateTime? @map("anonymized_at")
   // Saldo de créditos de generación. Es la fuente rápida de lectura; la suma de
   // creditTransactions debe cuadrar con este valor (invariante mantenido en
   // CreditsService). Default 0: el bono de registro entra por el ledger.
-  generationCredits Int      @default(0) @map("generation_credits")
-  lastLoginAt      DateTime? @map("last_login_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
+  generationCredits Int       @default(0) @map("generation_credits")
+  lastLoginAt       DateTime? @map("last_login_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
 
   // Relations
   pets               Pet[]
@@ -61,6 +61,8 @@ model User {
   @@index([googleId])
   @@index([status])
   @@index([deletedAt])
+  // Altas por día y comparativa con el periodo anterior en el dashboard admin.
+  @@index([createdAt(sort: Desc)])
   @@map("users")
 }
 
@@ -339,11 +341,11 @@ model ProductReference {
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @default(now()) @updatedAt @map("updated_at")
 
-  style             Style?                 @relation(fields: [styleId], references: [id], onDelete: SetNull)
-  generations       Generation[]
-  productVariants   ProductFormatVariant[]
+  style              Style?                 @relation(fields: [styleId], references: [id], onDelete: SetNull)
+  generations        Generation[]
+  productVariants    ProductFormatVariant[]
   creditPackVariants CreditPackVariant[]
-  orderItems        OrderItem[]
+  orderItems         OrderItem[]
 
   @@index([isActive])
   @@index([styleId])
@@ -615,6 +617,10 @@ model OrderItem {
   @@index([productionStatus])
   @@index([fulfillmentMethod])
   @@index([productRefId])
+  // Antigüedad de la cola y enviados/entregados por periodo en el dashboard.
+  @@index([createdAt(sort: Desc)])
+  @@index([shippedAt(sort: Desc)])
+  @@index([deliveredAt(sort: Desc)])
   @@map("order_items")
 }
 
@@ -635,6 +641,8 @@ model OrderEvent {
 
   @@index([orderId, createdAt(sort: Desc)])
   @@index([orderItemId])
+  // Actividad reciente global del dashboard (sin filtrar por pedido).
+  @@index([createdAt(sort: Desc)])
   @@map("order_events")
 }
 
@@ -673,6 +681,8 @@ model Expense {
   @@index([userId])
   @@index([generationId])
   @@index([category])
+  // Costos por periodo en el dashboard: `category` sola no acota la ventana.
+  @@index([category, createdAt(sort: Desc)])
   @@map("expenses")
 }
 

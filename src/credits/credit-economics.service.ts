@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BASE_CURRENCY } from '../expenses/expenses.service';
 
-export type EconomicsPeriod = '7d' | '30d' | '90d' | 'all';
+export type EconomicsPeriod = '3d' | '7d' | '30d' | '90d' | 'all';
 
 /**
  * Une los dos libros mayores del sistema: el de créditos (`CreditTransaction`)

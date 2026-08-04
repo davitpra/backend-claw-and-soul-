@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 import { BullModule } from '@nestjs/bullmq';
+import type { RedisOptions } from 'ioredis';
 
 // Config imports
 import databaseConfig from './config/database.config';
@@ -38,6 +39,9 @@ import { CreditsModule } from './credits/credits.module';
 // Guards
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
+// Controllers
+import { HealthController } from './health/health.controller';
+
 @Module({
   imports: [
     // Global configuration
@@ -54,12 +58,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        connection: {
-          host: configService.get<string>('redis.host'),
-          port: configService.get<number>('redis.port'),
-          password: configService.get<string>('redis.password'),
-          db: configService.get<number>('redis.db'),
-        },
+        connection: configService.getOrThrow<RedisOptions>('redis'),
       }),
     }),
 
@@ -87,6 +86,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     CartModule,
     CreditsModule,
   ],
+  controllers: [HealthController],
   providers: [
     {
       provide: APP_GUARD,

@@ -186,6 +186,21 @@ Environment variables are loaded from `.env.local` (priority) or `.env`.
 
 **Port**: Defaults to 3001 if `PORT` env var not set
 
+## Deployment
+
+Target: Railway (single always-on instance). See `docs/DEPLOY.md` for the full
+procedure. Key constraints:
+
+- **Never serverless**: BullMQ workers and four `@Cron` jobs live in the API
+  process.
+- **Never more than one replica**: the crons would run duplicated.
+- Migrations run as Railway's pre-deploy command (`npm run migrate:deploy`),
+  before the new code starts.
+- Cookies rely on `COOKIE_DOMAIN` (`.clawandsoul.com`) so the API subdomain and
+  the frontend share the session. `COOKIE_SAMESITE=none` is only needed if they
+  ever end up on different root domains.
+- Swagger (`/api/docs`) is off in production unless `SWAGGER_ENABLED=true`.
+
 ## MCP Servers
 
 This project is configured with Model Context Protocol (MCP) servers to enhance Claude Code capabilities. See `MCP_SETUP.md` for detailed documentation.

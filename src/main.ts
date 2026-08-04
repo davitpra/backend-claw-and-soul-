@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -16,9 +17,17 @@ import * as express from 'express';
 // Swagger documentation
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log', 'debug'],
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: isProduction
+      ? ['error', 'warn', 'log']
+      : ['error', 'warn', 'log', 'debug'],
   });
+
+  // Detrás del proxy de la plataforma (Railway, Render, Nginx) req.ip devolvería
+  // la IP del balanceador; sin esto el geoip de las sesiones registra basura.
+  app.set('trust proxy', 1);
 
   // Raw body required for Shopify HMAC webhook verification.
   // Must be registered before setGlobalPrefix and cookieParser so the
@@ -59,7 +68,7 @@ async function bootstrap() {
   const configuredOrigin = process.env.FRONTEND_URL?.replace(/\/+$/, '');
   const allowedOrigins = [
     ...(configuredOrigin ? [configuredOrigin] : []),
-    ...(process.env.NODE_ENV === 'production' ? [] : localOrigins),
+    ...(isProduction ? [] : localOrigins),
   ];
 
   app.enableCors({
@@ -67,7 +76,13 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Swagger documentation
+  // Swagger documentation. En producción queda apagado salvo que se active a
+  // mano: /api/docs publica toda la superficie de la API (incluidos los
+  // endpoints de admin) sin pedir credenciales.
+  const swaggerEnabled = process.env.SWAGGER_ENABLED
+    ? process.env.SWAGGER_ENABLED === 'true'
+    : !isProduction;
+
   const config = new DocumentBuilder()
     .setTitle('Pet AI API')
     .setDescription('API for AI-powered pet image and video generation')
@@ -82,16 +97,20 @@ async function bootstrap() {
     .build();
 
   // create swagger document api at /api/docs
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  if (swaggerEnabled) {
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = process.env.PORT || 3001;
 
-  await app.listen(port);
-  console.log(`🚀 Application is running on: http://localhost:${port}`);
-  console.log(
-    `📚 Swagger docs available at: http://localhost:${port}/api/docs`,
-  );
+  // '0.0.0.0' es obligatorio dentro de un contenedor: el default de Node solo
+  // escucharía en la interfaz local y el healthcheck de la plataforma fallaría.
+  await app.listen(port, '0.0.0.0');
+  console.log(`🚀 Application is running on port ${port}`);
+  if (swaggerEnabled) {
+    console.log(`📚 Swagger docs available at /api/docs`);
+  }
 }
 
 bootstrap().catch((err) => {

@@ -1,4 +1,18 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  "compilerOptions": {
+    // Sin rootDir, tsc infiere la raíz común de los ficheros compilados: como
+    // prisma.config.ts y scripts/ viven en la raíz del proyecto, la salida caía
+    // en dist/src/main.js y `npm run start:prod` (node dist/main) no arrancaba.
+    "rootDir": "./src"
+  },
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "scripts",
+    "prisma",
+    "prisma.config.ts",
+    "**/*spec.ts"
+  ]
 }

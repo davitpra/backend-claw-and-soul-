@@ -33,37 +33,55 @@ export class AuthController {
     };
   }
 
+  // Opciones compartidas por set y clear: si difieren en domain o sameSite el
+  // navegador trata la cookie como otra distinta y el logout no la borra.
+  //
+  // COOKIE_DOMAIN ('.clawandsoul.com') hace que la cookie emitida por
+  // api.clawandsoul.com viaje también al frontend del dominio raíz. Si algún día
+  // frontend y API viven en dominios distintos, no basta con quitarlo: hay que
+  // poner COOKIE_SAMESITE=none (que exige secure, y por tanto HTTPS).
+  private cookieOptions() {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const sameSite = (process.env.COOKIE_SAMESITE || 'lax') as
+      | 'lax'
+      | 'strict'
+      | 'none';
+
+    return {
+      httpOnly: true, // httpOnly cookies prevent XSS attacks
+      // sameSite 'none' solo es válido junto a secure, incluso fuera de producción.
+      secure: isProduction || sameSite === 'none',
+      sameSite, // 'strict' would block OAuth flows
+      path: '/',
+      ...(process.env.COOKIE_DOMAIN
+        ? { domain: process.env.COOKIE_DOMAIN }
+        : {}),
+    };
+  }
+
   private setAuthCookies(
     res: Response,
     accessToken: string,
     refreshToken: string,
   ) {
-    // httpOnly cookies prevent XSS attacks
-    // secure: true requires HTTPS (enable in production)
-    // sameSite: 'strict' prevents CSRF attacks
-
-    const isProduction = process.env.NODE_ENV === 'production';
+    const options = this.cookieOptions();
 
     res.cookie('accessToken', accessToken, {
-      httpOnly: true,
-      secure: isProduction, // Only send over HTTPS in production
-      sameSite: 'lax', // 'strict' would block OAuth flows
+      ...options,
       maxAge: 15 * 60 * 1000, // 15 minutes
-      path: '/',
     });
 
     res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'lax',
+      ...options,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      path: '/',
     });
   }
 
   private clearAuthCookies(res: Response) {
-    res.clearCookie('accessToken', { path: '/' });
-    res.clearCookie('refreshToken', { path: '/' });
+    const options = this.cookieOptions();
+
+    res.clearCookie('accessToken', options);
+    res.clearCookie('refreshToken', options);
   }
 
   @Public()

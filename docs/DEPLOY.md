@@ -114,6 +114,13 @@ haga las peticiones con `credentials: 'include'`.
   variables del servicio también en el build, así que `NODE_ENV=production` hace
   que npm omita las devDependencies. El `.npmrc` del repo (`include=dev`) lo
   neutraliza; no lo borres.
+- **`npm ci` falla con EUSAGE y "Missing: react … from lock file"**: el CLI de
+  prisma depende de `@prisma/studio-core`, que declara `react`, `react-dom` y
+  `@types/react` como peers no opcionales; npm los instala solos. Un
+  `legacy-peer-deps=true` en el `~/.npmrc` de quien desarrolle los omite del
+  lockfile y el deploy revienta. El `.npmrc` del repo fuerza
+  `legacy-peer-deps=false` para que el lock salga siempre igual. Si vuelve a
+  aparecer, regenera el lock con `npm install` y commítealo.
 - **La app no arranca por `JWT_ACCESS_SECRET is required in production`**: es
   intencional. Sin la variable, los tokens se firmarían con el placeholder
   público del repo y cualquiera podría fabricar sesiones.

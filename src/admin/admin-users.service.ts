@@ -11,6 +11,12 @@ import { PaintByNumbersService } from '../paint-by-numbers/paint-by-numbers.serv
 import { AuthService } from '../auth/auth.service';
 import { AUDIT_ACTION } from '../common/constants/audit-actions';
 import { lookupLocation } from '../common/utils/geoip.util';
+import {
+  CUSTOMER_ONLY,
+  NEVER_ACTIVATED,
+  activeSince,
+  inactiveSince,
+} from './stats/user-activity.util';
 
 type UserOrderBy =
   | Prisma.UserOrderByWithRelationInput
@@ -35,10 +41,47 @@ const USER_ORDER_BY_FIELDS: Record<
   // Solo cuenta los pedidos enlazados a la cuenta: `Order.userId` es nullable y
   // un pedido de invitado no se atribuye a nadie hasta que se enlaza a mano.
   orders: (dir) => ({ orders: { _count: dir } }),
-  lastActivity: (dir) => ({ lastLoginAt: { sort: dir, nulls: 'last' } }),
+  // Por `lastSeenAt` y no por `lastLoginAt`: la primera incluye a la segunda
+  // (el login escribe las dos) y además recoge el uso sin re-autenticarse, que
+  // es justo lo que la columna «Última actividad» dice mostrar.
+  lastActivity: (dir) => ({ lastSeenAt: { sort: dir, nulls: 'last' } }),
 };
 
 const DEFAULT_USER_ORDER_BY: UserOrderBy = { createdAt: 'desc' };
+
+/**
+ * Filtro de actividad del listado. Los cuatro primeros valores son los mismos
+ * que los periodos del dashboard (`STATS_PERIODS`), para que cualquier cifra de
+ * actividad de allí enlace aquí sin tabla de conversión de por medio.
+ */
+export const USER_ACTIVITY_FILTERS = [
+  '3d',
+  '7d',
+  '30d',
+  '90d',
+  'dormant',
+  'never',
+] as const;
+
+export type UserActivityFilter = (typeof USER_ACTIVITY_FILTERS)[number];
+
+export function isUserActivityFilter(
+  value: unknown,
+): value is UserActivityFilter {
+  return USER_ACTIVITY_FILTERS.includes(value as UserActivityFilter);
+}
+
+/** Frontera de «dormido»: sin señales desde hace más de este tiempo. */
+const DORMANT_AFTER_DAYS = 90;
+
+function activityWhere(filter: UserActivityFilter): Prisma.UserWhereInput {
+  if (filter === 'never') return NEVER_ACTIVATED;
+
+  const days = filter === 'dormant' ? DORMANT_AFTER_DAYS : parseInt(filter, 10);
+  const cutoff = new Date(Date.now() - days * 86_400_000);
+
+  return filter === 'dormant' ? inactiveSince(cutoff) : activeSince(cutoff);
+}
 
 /** Columnas ordenables del historial de movimientos de crédito. */
 const CREDIT_TX_ORDER_BY_FIELDS: Record<
@@ -112,17 +155,43 @@ export class AdminUsersService {
       sort?: string;
       order?: string;
       status?: string;
+      activity?: UserActivityFilter;
     } = {},
   ) {
     const { skip, take } = getPaginationParams(page, limit);
 
     const where: Prisma.UserWhereInput = {};
 
+    // Búsqueda y actividad se acumulan en un `AND` en vez de escribirse sueltas
+    // en el `where`: las dos se expresan como un `OR` de primer nivel, así que
+    // asignarlas a `where.OR` haría que la segunda pisara a la primera y el
+    // listado filtrara de más en silencio, sin ningún error.
+    const and: Prisma.UserWhereInput[] = [];
+
     if (opts.search) {
-      where.OR = [
-        { email: { contains: opts.search, mode: 'insensitive' } },
-        { fullName: { contains: opts.search, mode: 'insensitive' } },
-      ];
+      and.push({
+        OR: [
+          { email: { contains: opts.search, mode: 'insensitive' } },
+          { fullName: { contains: opts.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    // El filtro de actividad no toca `status` a propósito: de eso se encarga el
+    // filtro de abajo, y así «dormidos» y «dados de baja» se pueden combinar en
+    // vez de contradecirse.
+    //
+    // Sí excluye al equipo, en cambio: este filtro es la vista de detalle de las
+    // cifras de recencia del dashboard, que son de clientela. Sin esto el badge
+    // «N en total» de esta página no cuadraría con la card desde la que se llega,
+    // y dos cifras contiguas que no cuadran se leen como un error de cálculo.
+    // Sin filtro de actividad el listado sigue mostrando a todo el mundo.
+    if (opts.activity) {
+      and.push({ ...CUSTOMER_ONLY, ...activityWhere(opts.activity) });
+    }
+
+    if (and.length) {
+      where.AND = and;
     }
 
     // Las cuentas dadas de baja se ocultan salvo que se pidan explícitamente:
@@ -159,6 +228,7 @@ export class AdminUsersService {
           generationCredits: true,
           createdAt: true,
           lastLoginAt: true,
+          lastSeenAt: true,
           _count: {
             select: {
               pets: true,

@@ -32,6 +32,8 @@ export class CreditEconomicsService {
 
   /**
    * Costo medio por generación en moneda base, con su desglose vision/imagen.
+   * Es la ÚNICA fuente de esta cifra en el admin: el dashboard la muestra tanto
+   * en `CreditsCard` como en `PipelineHealthCard`, que ya no calcula la suya.
    *
    * Se lee con `findMany` en vez de `groupBy({ _sum: { amountBase } })` porque
    * las filas sin conversión FX tienen `amountBase` nulo y un `_sum` las
@@ -42,6 +44,10 @@ export class CreditEconomicsService {
       where: {
         category: 'image_generation',
         generationId: { not: null },
+        // `recordGenerationCost` no distingue las pruebas del panel, así que el
+        // filtro va aquí: sin él, el resto del pipeline dice excluirlas y esta
+        // media las contaba, que era parte de por qué las dos cards no cuadraban.
+        generation: { isAdminTest: false },
         ...(since ? { createdAt: { gte: since } } : {}),
       },
       select: { amount: true, amountBase: true, fxRate: true, detail: true },

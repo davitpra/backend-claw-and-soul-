@@ -42,6 +42,11 @@ model User {
   // CreditsService). Default 0: el bono de registro entra por el ledger.
   generationCredits Int       @default(0) @map("generation_credits")
   lastLoginAt       DateTime? @map("last_login_at")
+  // Última señal de vida, no último login: se refresca también en cada rotación
+  // del refresh token (~15 min de uso). `lastLoginAt` solo se escribe al
+  // autenticarse, así que por sí solo hace parecer inactivo a quien usa la app a
+  // diario sin volver a loguearse. Las métricas de actividad miran las dos.
+  lastSeenAt        DateTime? @map("last_seen_at")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
 
@@ -63,6 +68,10 @@ model User {
   @@index([deletedAt])
   // Altas por día y comparativa con el periodo anterior en el dashboard admin.
   @@index([createdAt(sort: Desc)])
+  // Segmentación por recencia del dashboard y filtro `activity` de /admin/users:
+  // ambos criterios miran las dos columnas, así que las dos necesitan índice.
+  @@index([lastSeenAt(sort: Desc)])
+  @@index([lastLoginAt(sort: Desc)])
   @@map("users")
 }
 
@@ -109,6 +118,9 @@ model RefreshToken {
   @@index([userId])
   @@index([token])
   @@index([expiresAt])
+  // Backfill de `User.lastSeenAt` y lectura de sesiones por usuario. El índice a
+  // secas sobre userId se queda: lo usa el ON DELETE CASCADE.
+  @@index([userId, lastUsedAt(sort: Desc)])
   @@map("refresh_tokens")
 }
 
@@ -563,6 +575,9 @@ model Order {
   @@index([customerEmail])
   @@index([shopifyCreatedAt(sort: Desc)])
   @@index([financialStatus])
+  // Recompra y segmento de comprador (primera vez / recurrente) del dashboard:
+  // ambas preguntan «¿tiene este usuario pedidos, y anteriores a esta fecha?».
+  @@index([userId, shopifyCreatedAt(sort: Desc)])
   @@map("orders")
 }
 

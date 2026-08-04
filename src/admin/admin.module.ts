@@ -10,6 +10,8 @@ import { PipelineStats } from './stats/pipeline.stats';
 import { GrowthStats } from './stats/growth.stats';
 import { TimelineStats } from './stats/timeline.stats';
 import { ActivityStats } from './stats/activity.stats';
+import { UsersStats } from './stats/users.stats';
+import { UserCohortStats } from './stats/user-cohort.stats';
 import { OrdersModule } from '../orders/orders.module';
 import { PaintByNumbersModule } from '../paint-by-numbers/paint-by-numbers.module';
 import { UsersModule } from '../users/users.module';
@@ -45,6 +47,8 @@ import { FxModule } from '../fx/fx.module';
     GrowthStats,
     TimelineStats,
     ActivityStats,
+    UsersStats,
+    UserCohortStats,
   ],
 })
 export class AdminModule {}

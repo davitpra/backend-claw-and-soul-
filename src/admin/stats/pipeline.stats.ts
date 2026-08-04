@@ -10,6 +10,16 @@ const STUCK_AFTER_MINUTES = 30;
  *
  * Todas las cifras excluyen `isAdminTest`: las pruebas del panel no son negocio
  * y contaminaban la tasa de fallo y el top de estilos del dashboard anterior.
+ *
+ * Aquí NO se calcula ningún costo por generación. Antes había uno propio
+ * —gasto de `image_generation` + `image_upscale` de la ventana dividido entre
+ * las generaciones completadas— que contradecía al de `CreditsCard` por
+ * construcción: numerador y denominador salían de tablas distintas, cortadas por
+ * fechas distintas (el gasto se fecha al completarse, la generación por
+ * `createdAt`), y el numerador incluía upscales que no son generaciones. La
+ * cifra única vive en `CreditEconomicsService.sampleUnitCost` y llega a la UI
+ * por `money.unitCost`; el gasto de upscale se muestra aparte desde
+ * `money.costs.byCategory`.
  */
 @Injectable()
 export class PipelineStats {
@@ -44,8 +54,8 @@ export class PipelineStats {
   async collect(period: ResolvedPeriod) {
     const stuckBefore = new Date(Date.now() - STUCK_AFTER_MINUTES * 60_000);
 
-    const [current, previous, byTypeGroups, stuck, latency, costRows] =
-      await Promise.all([
+    const [current, previous, byTypeGroups, stuck, latency] = await Promise.all(
+      [
         this.failureRateBetween(period.from, period.to),
         this.failureRateBetween(period.prevFrom, period.prevTo),
 
@@ -81,29 +91,14 @@ export class PipelineStats {
           AND status = 'completed'
           AND processing_time_seconds IS NOT NULL
       `,
-
-        // `amountBase` es nullable cuando no hubo conversión FX; un
-        // `_sum` la ignoraría en silencio, así que se agrega en JS cayendo a
-        // `amount` — mismo criterio que `ExpensesService.customerSummary`.
-        this.prisma.expense.findMany({
-          where: {
-            category: { in: ['image_generation', 'image_upscale'] },
-            createdAt: { gte: period.from, lt: period.to },
-          },
-          select: { amount: true, amountBase: true },
-        }),
-      ]);
+      ],
+    );
 
     const byType = { image: 0, video: 0 };
     for (const group of byTypeGroups) {
       if (group.type === 'video') byType.video = group._count._all;
       else byType.image = group._count._all;
     }
-
-    const totalCost = costRows.reduce(
-      (acc, row) => acc + (row.amountBase?.toNumber() ?? row.amount.toNumber()),
-      0,
-    );
 
     return {
       total: current.total,
@@ -118,8 +113,6 @@ export class PipelineStats {
       avgProcessingSeconds: latency[0]?.avg ?? null,
       p95ProcessingSeconds: latency[0]?.p95 ?? null,
       byType,
-      generationCost: totalCost,
-      costPerGeneration: safeRatio(totalCost, current.completed),
     };
   }
 }

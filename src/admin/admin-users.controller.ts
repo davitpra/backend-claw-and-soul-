@@ -23,7 +23,11 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from '@nestjs/swagger';
-import { AdminUsersService } from './admin-users.service';
+import {
+  AdminUsersService,
+  USER_ACTIVITY_FILTERS,
+  isUserActivityFilter,
+} from './admin-users.service';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { DeleteUserDto } from './dto/delete-user.dto';
 import { AccountStatusService } from '../users/account-status.service';
@@ -69,6 +73,15 @@ export class AdminUsersController {
     ],
   })
   @ApiQuery({ name: 'order', required: false, enum: ['asc', 'desc'] })
+  @ApiQuery({
+    name: 'activity',
+    required: false,
+    enum: USER_ACTIVITY_FILTERS,
+    description:
+      'Recencia de la última señal de vida (login o uso de la app). ' +
+      '`dormant` = sin señales desde hace más de 90 días; ' +
+      '`never` = registrado sin mascota ni generación.',
+  })
   @ApiResponse({ status: 200, description: 'Users list retrieved' })
   list(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -77,12 +90,17 @@ export class AdminUsersController {
     @Query('sort') sort?: string,
     @Query('order') order?: string,
     @Query('status') status?: string,
+    @Query('activity') activity?: string,
   ) {
     return this.usersService.listUsers(page, limit, {
       search,
       sort,
       order,
       status,
+      // Un valor desconocido se ignora en vez de dar 400: es un parámetro de
+      // presentación, igual que `sort`, y un enlace viejo debe seguir abriendo
+      // el listado en lugar de romperse.
+      activity: isUserActivityFilter(activity) ? activity : undefined,
     });
   }
 

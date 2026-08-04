@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { FxRateService } from '../../fx/fx-rate.service';
 import { BASE_CURRENCY } from '../../expenses/expenses.service';
 import { ResolvedPeriod } from './period.util';
+import { CUSTOMER_ONLY_SQL } from './user-activity.util';
 
 interface DayRow {
   day: Date;
@@ -93,21 +94,21 @@ export class TimelineStats {
         ORDER BY day ASC
       `,
 
-      // El filtro de admins replica el `CUSTOMER_ONLY` de `GrowthStats`: la suma
-      // de esta serie tiene que cuadrar con el KPI `newUsers`, así que los dos
-      // sitios excluyen exactamente lo mismo.
+      // El filtro de admins es el mismo `CUSTOMER_ONLY` que aplica `GrowthStats`,
+      // aquí en su versión SQL: la suma de esta serie tiene que cuadrar con el
+      // KPI `newUsers`, así que los dos sitios excluyen exactamente lo mismo.
       //
       // Sin filtrar por `status`: `GrowthStats.newUsers` tampoco lo hace, por el
       // mismo motivo. El filtro de borradas aplica solo a `totalUsers`, que es
       // un acumulado.
       this.prisma.$queryRaw<DayRow[]>`
         SELECT
-          DATE_TRUNC('day', created_at)::date AS day,
+          DATE_TRUNC('day', u.created_at)::date AS day,
           COUNT(*)::int AS count
-        FROM users
-        WHERE created_at >= ${period.from}
-          AND created_at < ${period.to}
-          AND role <> 'admin'
+        FROM users u
+        WHERE u.created_at >= ${period.from}
+          AND u.created_at < ${period.to}
+          AND ${CUSTOMER_ONLY_SQL}
         GROUP BY day
         ORDER BY day ASC
       `,

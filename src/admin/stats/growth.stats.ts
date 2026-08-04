@@ -1,22 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ResolvedPeriod, deltaPct, safeRatio } from './period.util';
+import { CUSTOMER_ONLY, NOT_DELETED, activeSince } from './user-activity.util';
 
 /** Un carrito con líneas y sin tocar en este tiempo se da por abandonado. */
 const ABANDONED_AFTER_DAYS = 3;
-
-/**
- * El equipo no es clientela: sus cuentas no cuentan como usuarios en ninguna
- * métrica del dashboard, o con poco tráfico las propias pruebas internas mueven
- * las cifras más que los clientes.
- *
- * `TimelineStats` repite este filtro en SQL a propósito: si uno de los dos deja
- * de aplicarlo, la suma de la serie diaria deja de cuadrar con `newUsers`.
- */
-const CUSTOMER_ONLY = { role: { not: 'admin' } } as const;
-
-/** Cuentas dadas de baja: fuera de los conteos, igual que en /admin/users. */
-const NOT_DELETED = { status: { not: 'deleted' } } as const;
 
 /**
  * Bloque de crecimiento: base de usuarios, altas, actividad y el embudo
@@ -63,18 +51,22 @@ export class GrowthStats {
           createdAt: { gte: period.prevFrom, lt: period.prevTo },
         },
       }),
-      // Una cuenta dada de baja no es «activa» aunque su último login caiga
+      // Una cuenta dada de baja no es «activa» aunque su última señal caiga
       // dentro de la ventana.
       //
-      // `lastLoginAt` se pisa en cada login, no es un historial: en periodos
-      // pasados esto infra-cuenta (quien entró en la ventana y volvió después ya
-      // no aparece). Exacto para el periodo en curso; medir ventanas históricas
-      // pediría la tabla de sesiones.
+      // Sin tope superior a propósito: `resolvePeriod` fija `to = now`, así que
+      // `>= from` y `[from, to)` cuentan lo mismo, y `activeSince` se expresa con
+      // una sola cota igual que en el filtro de /admin/users.
+      //
+      // Ni `lastSeenAt` ni `lastLoginAt` son un historial —los dos se pisan—, así
+      // que esto es exacto para el periodo en curso e infra-cuenta hacia atrás:
+      // quien estuvo activo en la ventana y volvió después ya no aparece. Por eso
+      // esta cifra no lleva delta contra el periodo anterior.
       this.prisma.user.count({
         where: {
           ...CUSTOMER_ONLY,
           ...NOT_DELETED,
-          lastLoginAt: { gte: period.from, lt: period.to },
+          ...activeSince(period.from),
         },
       }),
 

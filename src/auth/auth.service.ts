@@ -143,10 +143,11 @@ export class AuthService {
 
     user = await this.assertCanLogIn(user);
 
-    // Update last login
+    // Update last login. `lastSeenAt` va en el mismo write: un login también es
+    // señal de vida, y así la columna nunca queda por detrás de `lastLoginAt`.
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: { lastLoginAt: new Date(), lastSeenAt: new Date() },
     });
 
     this.logger.log(`User logged in: ${user.email}`);
@@ -261,7 +262,7 @@ export class AuthService {
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: { lastLoginAt: new Date(), lastSeenAt: new Date() },
     });
 
     this.logger.log(`User logged in via Google: ${user.email}`);
@@ -365,6 +366,23 @@ export class AuthService {
           ipAddress: storedToken.ipAddress ?? undefined,
         },
       );
+
+      // Señal de vida sin login: es lo que distingue a `lastSeenAt` de
+      // `lastLoginAt`. Sin esto, quien usa la app a diario durante meses sin
+      // volver a autenticarse figura como inactivo en el dashboard. La escritura
+      // sale del camino crítico —si falla, la sesión ya está rotada y la métrica
+      // puede perder un tick— y solo ocurre una vez por ventana de refresco
+      // (~15 min por sesión activa).
+      await this.prisma.user
+        .update({
+          where: { id: payload.sub },
+          data: { lastSeenAt: new Date() },
+        })
+        .catch((error) =>
+          this.logger.warn(
+            `Could not update lastSeenAt for user ${payload.sub}: ${error}`,
+          ),
+        );
 
       return tokens;
     } catch (error) {

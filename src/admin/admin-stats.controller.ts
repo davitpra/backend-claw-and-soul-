@@ -30,4 +30,19 @@ export class AdminStatsController {
       isStatsPeriod(period) ? period : '30d',
     );
   }
+
+  @Get('users')
+  @ApiOperation({
+    summary: 'Cohorte de activación y top usuarios por valor del periodo',
+    description:
+      'Fuera de /overview a propósito: solo lo pide la sección Usuarios del ' +
+      'dashboard, y es el único bloque cuyo costo escala con el número de usuarios.',
+  })
+  @ApiQuery({ name: 'period', required: false, enum: STATS_PERIODS })
+  @ApiResponse({ status: 200, description: 'User analytics retrieved' })
+  getUsersDetail(@Query('period') period?: string) {
+    return this.statsService.getUsersDetail(
+      isStatsPeriod(period) ? period : '30d',
+    );
+  }
 }

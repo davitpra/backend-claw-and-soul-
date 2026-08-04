@@ -47,10 +47,10 @@ export class MoneyStats {
       this.creditEconomics.globalEconomics(period.key),
     ]);
 
-    const byCategory: Record<string, number> = {};
-    for (const [category, row] of Object.entries(costs.byCategory)) {
-      byCategory[category] = row.total;
-    }
+    // Se conserva el `count` de cada categoría, no solo el total: es lo que deja
+    // a `PipelineHealthCard` mostrar cuántos upscales hubo y a cuánto salió cada
+    // uno sin abrir una consulta propia.
+    const byCategory = costs.byCategory;
 
     const grossMargin = current.total - costs.grandTotal;
     const marginRatio = safeRatio(grossMargin, current.total);

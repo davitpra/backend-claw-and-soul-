@@ -4,7 +4,13 @@
     // Sin rootDir, tsc infiere la raíz común de los ficheros compilados: como
     // prisma.config.ts y scripts/ viven en la raíz del proyecto, la salida caía
     // en dist/src/main.js y `npm run start:prod` (node dist/main) no arrancaba.
-    "rootDir": "./src"
+    "rootDir": "./src",
+    // Con rootDir en src, este tsconfig queda fuera de la raíz de compilación y
+    // tsc escribiría el .tsbuildinfo junto al config, donde el deleteOutDir de
+    // nest-cli ya no lo alcanza: la caché sobreviviría al borrado de dist/, tsc
+    // daría todo por compilado y no emitiría nada. Anclado dentro de dist/ se
+    // borra a la vez que la salida.
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
   },
   "exclude": [
     "node_modules",

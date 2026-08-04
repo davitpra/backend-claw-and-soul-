@@ -104,6 +104,20 @@ Y en el navegador: login → recargar la página. Si la sesión se pierde al
 recargar, el problema es la cookie: revisa `COOKIE_DOMAIN` y que el frontend
 haga las peticiones con `credentials: 'include'`.
 
+## Problemas conocidos del build
+
+- **`npm ci` falla con ERESOLVE**: pasaba porque `@nestjs/config`, `jwt`,
+  `passport` y `swagger` seguían en la línea de NestJS 10 con el core en 11. En
+  local se instalaban igual por el lockfile; `npm ci` revalida los peers y aborta.
+  Resuelto subiéndolos a config 4 / jwt 11 / passport 11 / swagger 11.
+- **`nest: not found` o `prisma: not found` en el build**: Railway inyecta las
+  variables del servicio también en el build, así que `NODE_ENV=production` hace
+  que npm omita las devDependencies. El `.npmrc` del repo (`include=dev`) lo
+  neutraliza; no lo borres.
+- **La app no arranca por `JWT_ACCESS_SECRET is required in production`**: es
+  intencional. Sin la variable, los tokens se firmarían con el placeholder
+  público del repo y cualquiera podría fabricar sesiones.
+
 ## Notas de mantenimiento
 
 - **Migraciones**: se aplican en el pre-deploy. Una migración destructiva se

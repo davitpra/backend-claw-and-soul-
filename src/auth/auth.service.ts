@@ -16,6 +16,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import type { User } from '@prisma/client';
 import type { JwtPayload } from './strategies/jwt.strategy';
+import type { ExpiresIn } from '../config/jwt.config';
 
 export interface DeviceInfo {
   userAgent?: string;
@@ -519,12 +520,16 @@ export class AuthService {
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('jwt.accessSecret'),
-        expiresIn: this.configService.get<string>('jwt.accessExpiresIn'),
+        secret: this.configService.getOrThrow<string>('jwt.accessSecret'),
+        expiresIn: this.configService.getOrThrow<ExpiresIn>(
+          'jwt.accessExpiresIn',
+        ),
       }),
       this.jwtService.signAsync(payload, {
-        secret: this.configService.get<string>('jwt.refreshSecret'),
-        expiresIn: this.configService.get<string>('jwt.refreshExpiresIn'),
+        secret: this.configService.getOrThrow<string>('jwt.refreshSecret'),
+        expiresIn: this.configService.getOrThrow<ExpiresIn>(
+          'jwt.refreshExpiresIn',
+        ),
       }),
     ]);
 

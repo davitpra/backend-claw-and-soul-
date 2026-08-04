@@ -20,6 +20,11 @@ lerna-debug.log*
 /coverage
 /.nyc_output
 
+# Claude Code: worktrees temporales (checkouts completos del repo) y ajustes
+# locales de cada máquina. El resto de .claude/ (skills) sí se versiona.
+.claude/worktrees/
+.claude/settings.local.json
+
 # IDEs and editors
 /.idea
 .project

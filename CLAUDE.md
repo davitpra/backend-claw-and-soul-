@@ -182,7 +182,12 @@ differentiates admin exemption.
 
 Environment variables are loaded from `.env.local` (priority) or `.env`.
 
-**CORS**: Configured for frontend at `process.env.FRONTEND_URL` (default: `http://localhost:3000`)
+**CORS**: Allowed origins come from `process.env.FRONTEND_URL` (default:
+`http://localhost:3000`), which accepts a comma-separated list. Origins are
+matched exactly, so `clawandsoul.com` and `www.clawandsoul.com` must both be
+listed if both are served. Only hosts under `COOKIE_DOMAIN`'s root domain can
+hold a session: the cookie is `sameSite=lax` and the browser drops it
+cross-site. See `docs/DEPLOY.md`.
 
 **Port**: Defaults to 3001 if `PORT` env var not set
 

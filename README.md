@@ -94,7 +94,7 @@ DATABASE_URL="postgresql://user:password@localhost:5432/clawandsoul_dev"
 |---|---|---|
 | `PORT` | Puerto del servidor | `3001` |
 | `NODE_ENV` | Entorno (`development` / `production`) | `development` |
-| `FRONTEND_URL` | URL del frontend para CORS | `http://localhost:3000` |
+| `FRONTEND_URL` | Orígenes permitidos por CORS; varios separados por comas | `http://localhost:3000` |
 | `WEBHOOK_SECRET` | Secreto compartido para webhooks de generación | — |
 
 ---

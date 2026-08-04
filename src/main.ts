@@ -64,10 +64,21 @@ async function bootstrap() {
   // FRONTEND_URL, so pointing that variable at some other host (a preview
   // deploy, a device on the LAN) can't lock out http://localhost:3000.
   const localOrigins = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  // FRONTEND_URL admite varios orígenes separados por comas (el dominio real y
+  // el de staging, p. ej.). Cada uno se compara por igualdad exacta contra la
+  // cabecera Origin, así que van enteros y con esquema: 'clawandsoul.com' y
+  // 'www.clawandsoul.com' son dos orígenes distintos y hay que listar el que se
+  // sirva. No pongas aquí un host fuera de .clawandsoul.com esperando que la
+  // sesión funcione: la cookie es sameSite=lax y el navegador la descarta en
+  // peticiones cross-site aunque el CORS pase.
+  //
   // Origin headers never carry a trailing slash; .env values sometimes do.
-  const configuredOrigin = process.env.FRONTEND_URL?.replace(/\/+$/, '');
+  const configuredOrigins = (process.env.FRONTEND_URL ?? '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
   const allowedOrigins = [
-    ...(configuredOrigin ? [configuredOrigin] : []),
+    ...configuredOrigins,
     ...(isProduction ? [] : localOrigins),
   ];
 

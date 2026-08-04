@@ -5,9 +5,74 @@ El backend **no puede ir en serverless**. Los workers de BullMQ y los cuatro
 3 AM, ciclo de vida de cuentas a las 4 AM) corren dentro del mismo proceso que la
 API, así que necesita un contenedor siempre encendido.
 
-Dominios asumidos aquí: frontend en `clawandsoul.com`, API en
-`api.clawandsoul.com`. Compartir dominio raíz es lo que permite que la cookie de
-sesión (`httpOnly`, `sameSite=lax`) viaje entre ambos.
+## Reparto de dominios
+
+| Host | Sirve | Alojado en |
+| --- | --- | --- |
+| `clawandsoul.com` | storefront Next.js — **canónico**, `www` redirige aquí | Vercel |
+| `api.clawandsoul.com` | esta API | Railway |
+| `shop.clawandsoul.com` | Shopify — **dominio principal**, aquí vive el checkout | Shopify |
+| `staging.clawandsoul.com` | preview del frontend, atado a una rama | Vercel |
+
+Todo cuelga del mismo dominio raíz a propósito: es lo que permite que la cookie
+de sesión (`httpOnly`, `sameSite=lax`, `COOKIE_DOMAIN=.clawandsoul.com`) viaje
+entre el frontend y la API, y que el cliente no salte a un dominio ajeno al
+pagar.
+
+Cuál de los dos hosts del storefront es el canónico **no es indiferente**:
+`FRONTEND_URL` se compara contra la cabecera `Origin` por igualdad exacta, y
+`clawandsoul.com` y `www.clawandsoul.com` son orígenes distintos. Si en Vercel
+se marca `www` como principal (es el default que propone al añadir el dominio) y
+aquí sigue el apex, el navegador acaba en `www` y **todas** las llamadas a la
+API mueren con un error de CORS. El mismo desajuste rompe el login de Google,
+que valida el origen de la página contra los *Authorized JavaScript origins*.
+Síntoma: el apex responde `308` hacia `www`, y un `curl -H "Origin: …"` contra
+la API devuelve la cabecera `access-control-allow-origin` para un host y no para
+el otro.
+
+El checkout de Shopify **no se puede alojar en dominio propio**: siempre lo
+sirve Shopify en el dominio principal de la tienda. Por eso Shopify vive en el
+subdominio `shop.` y no en la raíz. El código no depende de ese dominio: el
+frontend usa `cart.checkoutUrl` tal cual lo devuelve `cartCreate`, y
+`SHOPIFY_STORE_DOMAIN` sigue apuntando al `.myshopify.com` (el endpoint de la
+Storefront API es independiente del dominio principal).
+
+DNS en Namecheap (*Advanced DNS*; el campo Host lleva solo el subdominio, sin
+`.clawandsoul.com`):
+
+| Type | Host | Value |
+| --- | --- | --- |
+| A | `@` | el IP que muestre Vercel para el proyecto |
+| CNAME | `www` | el `*.vercel-dns-0XX.com` del proyecto |
+| CNAME | `staging` | el mismo `*.vercel-dns-0XX.com` (opcional, ver más abajo) |
+| CNAME | `shop` | `shops.myshopify.com` |
+| CNAME | `api` | `xxxx.up.railway.app` |
+| TXT | el que indique Railway | valor de verificación de Railway |
+
+Los dos registros de Railway (CNAME **y** TXT) son obligatorios: sin el TXT no
+verifica el dominio y `api.clawandsoul.com` devuelve 404 aunque el CNAME esté
+bien. Vercel asigna valores por proyecto, así que hay que copiarlos del
+dashboard en vez de usar los `76.76.21.21` / `cname.vercel-dns.com` de los
+tutoriales antiguos.
+
+Orden para migrar sin caída (la tienda arranca con la raíz apuntando a Shopify):
+
+1. Shopify → *Settings → Domains* → conectar `shop.clawandsoul.com`.
+2. Namecheap → CNAME `shop` → `shops.myshopify.com`.
+3. Shopify verifica → **Set as primary**.
+4. Desplegar el frontend en Vercel y apuntar `@` + `www` allí (aquí se borra el
+   A de Shopify, `23.227.38.65`).
+5. Shopify → *Domains* → quitar `clawandsoul.com` y `www.clawandsoul.com`.
+6. Subir al Online Store un tema mínimo que redirija todo a `clawandsoul.com`
+   salvo las rutas de checkout, para que los enlaces de vuelta del checkout
+   ("continue shopping", el logo) no lleven a una tienda Shopify paralela.
+7. Quitar la contraseña de la tienda. **No se puede lanzar con ella puesta**:
+   con la tienda protegida, los enlaces de checkout de la Storefront API
+   redirigen a la página de password y no se puede pagar.
+
+Efecto secundario a asumir: Shopify tratará `shop.` como dominio principal para
+todo — enlaces de los emails de confirmación de pedido, sitemap y URLs que
+generen las apps.
 
 ## 1. Servicios en Railway
 
@@ -42,7 +107,7 @@ REDIS_URL=${{Redis.REDIS_URL}}
 
 NODE_ENV=production
 PORT=3001                      # Railway lo inyecta; déjalo si quieres fijarlo
-FRONTEND_URL=https://clawandsoul.com     # sin barra final
+FRONTEND_URL=https://clawandsoul.com     # sin barra final; admite lista con comas
 APP_PUBLIC_URL=https://api.clawandsoul.com
 
 COOKIE_DOMAIN=.clawandsoul.com
@@ -75,6 +140,36 @@ ella, y el esquema `rediss://` activa TLS automáticamente
 
 Swagger queda apagado en producción. Para abrirlo puntualmente:
 `SWAGGER_ENABLED=true` (recuerda quitarlo — `/api/docs` no pide credenciales).
+
+### Entorno de staging (y por qué los previews de Vercel no valen)
+
+`FRONTEND_URL` acepta varios orígenes separados por comas:
+
+```bash
+FRONTEND_URL=https://clawandsoul.com,https://staging.clawandsoul.com
+```
+
+Los preview deployments de Vercel **no se pueden autorizar** por mucho que se
+listen: cada deploy sale en un `*.vercel.app` distinto e irrepetible, y aunque
+se abriera el CORS a todos ellos la sesión seguiría sin funcionar. `vercel.app`
+es otro sitio a ojos del navegador, así que la cookie `sameSite=lax` que emite
+`auth.controller.ts` se descarta al recibirla y no se manda en las siguientes
+peticiones. El fallo es silencioso: el catálogo y las fichas de producto cargan
+(esos datos vienen de Shopify), el `POST /auth/login` devuelve 200, y el usuario
+sigue sin sesión.
+
+La salida es no depender de las URLs efímeras: en Vercel → *Settings → Domains*
+se añade `staging.clawandsoul.com` atado a una rama concreta (disponible en
+todos los planes). Al colgar del dominio raíz, la cookie funciona sin tocar
+`sameSite` y aquí solo hay que sumar un origen fijo. Con plan Pro se puede ir más
+lejos y poner un wildcard `*.preview.clawandsoul.com` como *preview suffix*, que
+da un entorno por PR con las mismas garantías.
+
+Lo que **no** hay que hacer es abrir `*.vercel.app` con `COOKIE_SAMESITE=none`:
+eso manda la cookie de sesión en peticiones cross-site desde cualquier web,
+tirando la protección CSRF que hoy sale gratis, sobre un dominio público donde
+cualquiera despliega. Además las cookies de terceros están en retirada en los
+navegadores.
 
 ## 3. Dominio
 

@@ -275,6 +275,97 @@ export class OrdersService {
   }
 
   /**
+   * Borra de la app una orden eliminada en Shopify (webhook `orders/delete`).
+   *
+   * Shopify no reenvía nada más sobre una orden borrada, así que el registro local
+   * quedaría huérfano para siempre: sin este handler la única salida es limpiar la
+   * base a mano (ver `scripts/purge-orders.ts`).
+   *
+   * Orden de operaciones, que importa:
+   *  1. Revertir créditos ANTES de borrar — `reverseCreditsForItems` lee los
+   *     OrderItems y el grant original, y necesita que sigan existiendo.
+   *  2. Desvincular las Expense — su FK a Order es `onDelete: Cascade`, así que sin
+   *     esto el borrado se llevaría gasto real ya incurrido (fal.ai, POD) y
+   *     falsearía los costes del dashboard. `orderItemId` se limpia solo (SetNull).
+   *  3. Borrar la orden: la cascada arrastra OrderItems y OrderEvents.
+   *
+   * Generations y PaintByNumbers sobreviven (FK `SetNull`). Idempotente: si la
+   * orden ya no está, es no-op.
+   */
+  async deleteShopifyOrder(shopifyOrderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({
+      where: { shopifyOrderId },
+      select: {
+        id: true,
+        orderNumber: true,
+        userId: true,
+        items: { select: { id: true } },
+      },
+    });
+
+    if (!order) {
+      this.logger.log(
+        `orders/delete for unknown Shopify order ${shopifyOrderId} — nothing to do`,
+      );
+      return;
+    }
+
+    await this.reverseCreditsForItems(
+      order.id,
+      order.items.map((i) => i.id),
+    );
+
+    const expenses = await this.prisma.expense.findMany({
+      where: { orderId: order.id },
+      select: { id: true, detail: true },
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const expense of expenses) {
+        await tx.expense.update({
+          where: { id: expense.id },
+          data: {
+            orderId: null,
+            // El vínculo se pierde, así que dejamos rastro del pedido borrado:
+            // el gasto sigue contando en los totales y se puede auditar.
+            detail: {
+              ...((expense.detail as Prisma.JsonObject) ?? {}),
+              deletedOrder: {
+                id: order.id,
+                orderNumber: order.orderNumber,
+                shopifyOrderId,
+              },
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
+
+      await tx.order.delete({ where: { id: order.id } });
+
+      // Los OrderEvents mueren con la orden: el rastro del borrado vive en
+      // AuditLog, que no cascadea.
+      await tx.auditLog.create({
+        data: {
+          action: 'order_deleted_from_shopify',
+          entityType: 'order',
+          entityId: order.id,
+          userId: order.userId,
+          details: {
+            shopifyOrderId,
+            orderNumber: order.orderNumber,
+            itemCount: order.items.length,
+            detachedExpenses: expenses.length,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    });
+
+    this.logger.log(
+      `Deleted order ${order.orderNumber} (${shopifyOrderId}): ${order.items.length} items, ${expenses.length} expenses detached`,
+    );
+  }
+
+  /**
    * Otorga los créditos de una orden pagada, separando líneas de "credit pack"
    * (creditAmount * qty, reason 'pack_purchase') de las líneas regulares
    * (+3/unidad, reason 'order_bonus'). Las líneas Digital/PBN (producto

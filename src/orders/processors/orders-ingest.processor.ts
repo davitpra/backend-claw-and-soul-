@@ -16,6 +16,10 @@ interface RefreshFulfillmentJobData {
   topic: string;
 }
 
+interface DeleteJobData {
+  shopifyOrderId: string;
+}
+
 @Processor(ORDERS_QUEUE)
 export class OrdersIngestProcessor extends WorkerHost {
   private readonly logger = new Logger(OrdersIngestProcessor.name);
@@ -25,7 +29,7 @@ export class OrdersIngestProcessor extends WorkerHost {
   }
 
   async process(
-    job: Job<IngestJobData | RefreshFulfillmentJobData>,
+    job: Job<IngestJobData | RefreshFulfillmentJobData | DeleteJobData>,
   ): Promise<void> {
     if (job.name === ORDERS_JOB_NAMES.INGEST) {
       const { payload, topic, webhookId } = job.data as IngestJobData;
@@ -42,6 +46,13 @@ export class OrdersIngestProcessor extends WorkerHost {
         shopifyOrderId,
         topic,
       );
+      return;
+    }
+
+    if (job.name === ORDERS_JOB_NAMES.DELETE) {
+      const { shopifyOrderId } = job.data as DeleteJobData;
+      this.logger.log(`Processing order delete: ${shopifyOrderId}`);
+      await this.ordersService.deleteShopifyOrder(shopifyOrderId);
       return;
     }
   }

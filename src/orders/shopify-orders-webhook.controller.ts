@@ -67,4 +67,23 @@ export class ShopifyOrdersWebhookController {
   handleFulfilled(@Req() req: Request) {
     return this.enqueue(req, 'orders/fulfilled');
   }
+
+  @Post('delete')
+  @ApiOperation({ summary: 'Shopify webhook: orders/delete' })
+  async handleDelete(@Req() req: Request) {
+    // A diferencia del resto de topics, el payload de orders/delete trae sólo
+    // `{ id }` — no hay line_items que ingerir, así que va por su propio job.
+    const { id } = JSON.parse((req.body as Buffer).toString('utf8')) as {
+      id: number | string;
+    };
+    const webhookId = req.headers['x-shopify-webhook-id'] as string | undefined;
+    const jobId = `order-${id}-orders-delete-${webhookId ?? Date.now()}`;
+
+    await this.ordersQueue.add(
+      ORDERS_JOB_NAMES.DELETE,
+      { shopifyOrderId: String(id) },
+      { ...ORDERS_JOB_OPTIONS, jobId },
+    );
+    return { received: true };
+  }
 }

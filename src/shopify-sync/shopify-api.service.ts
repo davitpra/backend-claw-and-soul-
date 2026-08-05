@@ -12,6 +12,9 @@ const WEBHOOK_TOPICS = [
   'orders/updated',
   'orders/cancelled',
   'orders/fulfilled',
+  // Sin este topic, borrar una orden en Shopify deja el registro local huérfano
+  // para siempre: Shopify no vuelve a emitir nada sobre ella.
+  'orders/delete',
   // FulfillmentOrders: los estados ricos (in_progress/on_hold/scheduled) cambian
   // SIN disparar orders/*, así que escuchamos sus topics para recalcular el
   // fulfillmentDisplayStatus de la orden afectada. (Nota: no existe un topic

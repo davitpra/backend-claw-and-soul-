@@ -21,6 +21,7 @@ const mockPrisma = {
   },
   order: {
     findUnique: jest.fn(),
+    delete: jest.fn(),
   },
   creditPackVariant: {
     findMany: jest.fn(),
@@ -28,6 +29,16 @@ const mockPrisma = {
   orderEvent: {
     create: jest.fn(),
   },
+  expense: {
+    findMany: jest.fn(),
+    update: jest.fn(),
+  },
+  auditLog: {
+    create: jest.fn(),
+  },
+  // La implementación (pasar el propio mock como cliente `tx`) se asigna en
+  // beforeEach: referenciar mockPrisma aquí sería un ciclo en su propio inicializador.
+  $transaction: jest.fn(),
 };
 
 const mockCredits = {
@@ -77,6 +88,10 @@ describe('OrdersService', () => {
     jest.clearAllMocks();
     mockPrisma.order.findUnique.mockResolvedValue({ orderNumber: '#1042' });
     mockPrisma.creditPackVariant.findMany.mockResolvedValue([]);
+    mockPrisma.expense.findMany.mockResolvedValue([]);
+    mockPrisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) =>
+      fn(mockPrisma),
+    );
   });
 
   // Acceso al método privado sin exponerlo en la API pública.
@@ -328,6 +343,88 @@ describe('OrdersService', () => {
       await service.transitionItemStatus('order-1', 'item-1', 'pre_production');
 
       expect(mockCredits.revoke).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteShopifyOrder', () => {
+    // findUnique se comparte con reverseCreditsForItems (que lo llama para el
+    // orderNumber): la primera respuesta es la orden, el resto el número.
+    function stubOrder(order: unknown) {
+      mockPrisma.order.findUnique
+        .mockResolvedValueOnce(order)
+        .mockResolvedValue({ orderNumber: '#1042' });
+    }
+
+    it('es no-op si la orden no existe localmente', async () => {
+      stubOrder(null);
+
+      await service.deleteShopifyOrder('999');
+
+      expect(mockPrisma.order.delete).not.toHaveBeenCalled();
+      expect(mockCredits.revoke).not.toHaveBeenCalled();
+    });
+
+    it('revierte créditos antes de borrar y desvincula las expenses', async () => {
+      stubOrder({
+        id: 'order-1',
+        orderNumber: '#1042',
+        userId: 'user-1',
+        items: [{ id: 'item-1' }],
+      });
+      stubGrants({ bonusUserId: 'user-1', packUserId: null });
+      mockPrisma.orderItem.findMany.mockResolvedValue([
+        { id: 'item-1', shopifyVariantId: 'v-reg', quantity: 2 },
+      ]);
+      mockPrisma.expense.findMany.mockResolvedValue([
+        { id: 'exp-1', detail: { provider: 'fal' } },
+      ]);
+
+      await service.deleteShopifyOrder('999');
+
+      expect(mockCredits.revoke).toHaveBeenCalledWith(
+        'user-1',
+        6, // 2 unidades * 3 créditos
+        'order_bonus_reversal',
+        'item-1',
+        expect.any(String),
+      );
+      // La FK de Expense es Cascade: sin desvincular, el gasto real se perdería.
+      expect(mockPrisma.expense.update).toHaveBeenCalledWith({
+        where: { id: 'exp-1' },
+        data: {
+          orderId: null,
+          detail: {
+            provider: 'fal',
+            deletedOrder: {
+              id: 'order-1',
+              orderNumber: '#1042',
+              shopifyOrderId: '999',
+            },
+          },
+        },
+      });
+      expect(mockPrisma.order.delete).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+      });
+      expect(mockPrisma.auditLog.create).toHaveBeenCalled();
+    });
+
+    it('borra igual una orden sin créditos ni expenses', async () => {
+      stubOrder({
+        id: 'order-2',
+        orderNumber: '#1043',
+        userId: null,
+        items: [],
+      });
+      stubGrants({ bonusUserId: null, packUserId: null });
+
+      await service.deleteShopifyOrder('1000');
+
+      expect(mockCredits.revoke).not.toHaveBeenCalled();
+      expect(mockPrisma.expense.update).not.toHaveBeenCalled();
+      expect(mockPrisma.order.delete).toHaveBeenCalledWith({
+        where: { id: 'order-2' },
+      });
     });
   });
 });

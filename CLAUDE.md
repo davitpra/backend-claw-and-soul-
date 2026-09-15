@@ -63,7 +63,7 @@ The application follows NestJS modular architecture with domain-driven modules:
 - **pets**: Pet profiles and photo management
 - **styles**: AI art style catalog (categories, parameters)
 - **generations**: Core AI generation engine (images/videos), status tracking, provider abstraction
-- **storage**: AWS S3 file upload/retrieval service (global module)
+- **storage**: Cloudinary file upload/retrieval service (global module)
 - **prisma**: Database service (global module)
 
 ### Global Configuration

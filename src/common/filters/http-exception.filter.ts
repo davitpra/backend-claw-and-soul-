@@ -26,16 +26,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? { message: exceptionResponse }
         : exceptionResponse;
 
-    // Los fallos de autenticación/autorización (401/403) son rutinarios
-    // (token vencido, visitante sin sesión) y no son errores del servidor.
-    // Los logueamos como warn sin stack trace para no ensuciar los logs.
-    if (status === 401 || status === 403) {
-      this.logger.warn(`HTTP ${status}: ${request.method} ${request.url}`);
-    } else {
+    // Solo los 5xx son errores del servidor. Los 4xx (token vencido, ruta
+    // inexistente, favicon, validación) son rutinarios: los logueamos como
+    // warn sin stack trace para no ensuciar los logs.
+    if (status >= 500) {
       this.logger.error(
         `HTTP ${status} Error: ${request.method} ${request.url}`,
         exception.stack,
       );
+    } else {
+      this.logger.warn(`HTTP ${status}: ${request.method} ${request.url}`);
     }
 
     response.status(status).json({
